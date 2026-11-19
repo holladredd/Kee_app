@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/widgets/kee_logo.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/notifications/notification_service.dart';
 import '../../../core/intelligence/local_ai_runner.dart';
@@ -200,9 +201,9 @@ class SettingsScreen extends ConsumerWidget {
           _buildSectionTitle(theme, 'About'),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.info_outline_rounded),
+              leading: const KeeLogo(size: 38),
               title: const Text('Kee v1.0.0'),
-              subtitle: const Text('Android-First Personal Memory & Task Assistant'),
+              subtitle: const Text('Personal Memory & Task Assistant'),
             ),
           ),
           const SizedBox(height: AppSpacing.xxl),

@@ -41,6 +41,7 @@ dependencies:
 
   # Networking (Optional sync with backend)
   http: ^1.6.0
+  sqflite_common_ffi_web: ^1.2.2
 
 dev_dependencies:
   flutter_test:

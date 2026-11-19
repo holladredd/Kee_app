@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="keeLightGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1B3D32"/>
+      <stop offset="100%" stop-color="#2D5A4C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Clean minimal rounded container -->
+  <rect width="512" height="512" rx="112" fill="#F8FBF9"/>
+  <rect width="504" height="504" x="4" y="4" rx="108" fill="none" stroke="#DDE5E1" stroke-width="4"/>
+
+  <!-- Minimalist Monogram: 'K' seamlessly transitioning into lowercase 'e' -->
+  <!-- Vertical stem of K -->
+  <line x1="164" y1="130" x2="164" y2="382" stroke="url(#keeLightGrad)" stroke-width="38" stroke-linecap="round"/>
+
+  <!-- Upper arm of K -->
+  <path d="M 180 260 L 324 140" fill="none" stroke="url(#keeLightGrad)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Lower branch of K flowing into lowercase 'e' -->
+  <path d="M 180 265 C 230 300 265 315 320 315 C 370 315 385 285 365 245 C 345 210 260 215 240 270 C 225 310 245 380 340 380 C 375 380 395 365 410 345"
+        fill="none"
+        stroke="url(#keeLightGrad)"
+        stroke-width="36"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- Central dot/accent representing memory spark -->
+  <circle cx="310" cy="265" r="14" fill="#1B3D32"/>
+</svg>
