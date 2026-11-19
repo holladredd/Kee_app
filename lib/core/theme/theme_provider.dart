@@ -2,17 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>((ref) {
+final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(() {
   return ThemeModeNotifier();
 });
 
-class ThemeModeNotifier extends StateNotifier<ThemeMode> {
-  ThemeModeNotifier() : super(ThemeMode.system) {
-    _loadSavedTheme();
-  }
-
+class ThemeModeNotifier extends Notifier<ThemeMode> {
   static const _key = 'user_theme_mode';
   final _storage = const FlutterSecureStorage();
+
+  @override
+  ThemeMode build() {
+    _loadSavedTheme();
+    return ThemeMode.system;
+  }
 
   Future<void> _loadSavedTheme() async {
     try {
