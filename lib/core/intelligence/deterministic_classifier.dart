@@ -38,7 +38,7 @@ class DeterministicClassifier {
     if (RegExp(r'\b(idea|what if|thought about making|concept for|brainstorm)\b').hasMatch(lower)) {
       final title = _generateTitle(trimmed, prefixToRemove: ['i have an idea for', 'idea:', 'an idea for', 'what if']);
       return ClassificationResult(
-        title: title,can i v
+        title: title,
         memoryType: 'idea',
         category: 'Ideas',
         tags: ['idea', ..._extractTags(lower)],

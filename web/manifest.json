@@ -1,11 +1,11 @@
 {
-    "name": "kee",
-    "short_name": "kee",
+    "name": "Kee",
+    "short_name": "Kee",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#080A0C",
+    "theme_color": "#080A0C",
+    "description": "Kee - Personal offline-first memory and task assistant.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

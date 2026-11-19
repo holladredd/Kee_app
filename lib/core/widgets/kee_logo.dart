@@ -14,17 +14,9 @@ class KeeLogo extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final primaryColor = isDark
-        ? const Color(0xFF7CB8A3) // Glow sage in dark
-        : const Color(0xFF265345); // Deep slate in light
-
-    final bgColor = isDark
-        ? const Color(0xFF14191C)
-        : const Color(0xFFF4F7F5);
-
-    final borderColor = isDark
-        ? const Color(0xFF253036)
-        : const Color(0xFFD8E1DD);
+    final markColor = isDark ? const Color(0xFFF1F3F5) : const Color(0xFF0D1115);
+    final bgColor = isDark ? const Color(0xFF080A0C) : const Color(0xFFF8F9FA);
+    final borderColor = isDark ? const Color(0xFF1C2127) : const Color(0xFFE2E6E9);
 
     return Container(
       width: size,
@@ -32,29 +24,35 @@ class KeeLogo extends StatelessWidget {
       decoration: showBackground
           ? BoxDecoration(
               color: bgColor,
-              borderRadius: BorderRadius.circular(size * 0.24),
+              borderRadius: BorderRadius.circular(size * 0.25),
               border: Border.all(color: borderColor, width: size * 0.015),
+              boxShadow: [
+                BoxShadow(
+                  color: isDark ? Colors.black.withOpacity(0.4) : Colors.black.withOpacity(0.04),
+                  blurRadius: size * 0.12,
+                  offset: Offset(0, size * 0.04),
+                ),
+              ],
             )
           : null,
-      padding: EdgeInsets.all(size * 0.16),
+      padding: EdgeInsets.all(size * 0.18),
       child: CustomPaint(
-        painter: _KeeLogoPainter(color: primaryColor, isDark: isDark),
+        painter: _KeePremiumLogoPainter(color: markColor),
       ),
     );
   }
 }
 
-class _KeeLogoPainter extends CustomPainter {
+class _KeePremiumLogoPainter extends CustomPainter {
   final Color color;
-  final bool isDark;
 
-  _KeeLogoPainter({required this.color, required this.isDark});
+  _KeePremiumLogoPainter({required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final strokeW = size.width * 0.11;
+    final strokeW = size.width * 0.095;
 
-    final paint = Paint()
+    final strokePaint = Paint()
       ..color = color
       ..strokeWidth = strokeW
       ..strokeCap = StrokeCap.round
@@ -62,68 +60,73 @@ class _KeeLogoPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
 
     final dotPaint = Paint()
-      ..color = isDark ? Colors.white : color
+      ..color = color
       ..style = PaintingStyle.fill;
 
-    // 1. Vertical stem of 'K'
+    // 1. Vertical Architectural Pillar of K
     final stemX = size.width * 0.22;
     canvas.drawLine(
-      Offset(stemX, size.height * 0.15),
-      Offset(stemX, size.height * 0.85),
-      paint,
+      Offset(stemX, size.height * 0.12),
+      Offset(stemX, size.height * 0.88),
+      strokePaint,
     );
 
-    // 2. Upper arm of 'K'
-    final branchY = size.height * 0.52;
+    // 2. Razor Upper Diagonal of K
+    final junctionY = size.height * 0.48;
     canvas.drawLine(
-      Offset(stemX + strokeW * 0.5, branchY),
-      Offset(size.width * 0.78, size.height * 0.18),
-      paint,
+      Offset(stemX + strokeW * 0.6, junctionY),
+      Offset(size.width * 0.78, size.height * 0.12),
+      strokePaint,
     );
 
-    // 3. Lower arm of 'K' transitioning smoothly into lowercase 'e'
+    // 3. Integrated Architectural Lowercase 'e'
+    // Crossbar
+    final crossbarY = size.height * 0.54;
+    canvas.drawLine(
+      Offset(stemX + strokeW * 0.6, crossbarY),
+      Offset(size.width * 0.82, crossbarY),
+      strokePaint,
+    );
+
+    // Circle Arc of 'e'
     final path = Path();
-    path.moveTo(stemX + strokeW * 0.5, branchY + strokeW * 0.2);
+    path.moveTo(size.width * 0.82, crossbarY);
 
-    // Curve down towards the 'e' body
+    // Upper curve over to the left
     path.cubicTo(
-      size.width * 0.45, size.height * 0.65,
-      size.width * 0.55, size.height * 0.70,
-      size.width * 0.74, size.height * 0.70,
+      size.width * 0.82, size.height * 0.38,
+      size.width * 0.68, size.height * 0.34,
+      size.width * 0.54, size.height * 0.34,
+    );
+    path.cubicTo(
+      size.width * 0.38, size.height * 0.34,
+      size.width * 0.32, size.height * 0.46,
+      size.width * 0.32, size.height * 0.60,
+    );
+    // Lower curve wrapping under
+    path.cubicTo(
+      size.width * 0.32, size.height * 0.78,
+      size.width * 0.42, size.height * 0.90,
+      size.width * 0.62, size.height * 0.90,
+    );
+    path.cubicTo(
+      size.width * 0.76, size.height * 0.90,
+      size.width * 0.84, size.height * 0.82,
+      size.width * 0.88, size.height * 0.74,
     );
 
-    // Loop around the head of 'e'
-    path.cubicTo(
-      size.width * 0.90, size.height * 0.70,
-      size.width * 0.95, size.height * 0.58,
-      size.width * 0.86, size.height * 0.48,
-    );
+    canvas.drawPath(path, strokePaint);
 
-    path.cubicTo(
-      size.width * 0.78, size.height * 0.38,
-      size.width * 0.55, size.height * 0.42,
-      size.width * 0.52, size.height * 0.58,
-    );
-
-    // Outer tail of 'e'
-    path.cubicTo(
-      size.width * 0.50, size.height * 0.75,
-      size.width * 0.60, size.height * 0.88,
-      size.width * 0.82, size.height * 0.85,
-    );
-
-    canvas.drawPath(path, paint);
-
-    // 4. Memory Spark dot inside 'e'
+    // 4. Subtle Precision Platinum Pip
     canvas.drawCircle(
-      Offset(size.width * 0.72, size.height * 0.54),
-      strokeW * 0.38,
+      Offset(size.width * 0.54, size.height * 0.44),
+      strokeW * 0.28,
       dotPaint,
     );
   }
 
   @override
-  bool shouldRepaint(covariant _KeeLogoPainter oldDelegate) {
-    return oldDelegate.color != color || oldDelegate.isDark != isDark;
+  bool shouldRepaint(covariant _KeePremiumLogoPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
