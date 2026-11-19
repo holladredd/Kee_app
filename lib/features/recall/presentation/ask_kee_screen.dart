@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../../core/constants/app_spacing.dart';
-import '../../intelligence/local_ai_runner.dart';
-import '../../intelligence/ai_abstraction.dart';
-import '../../memories/data/memory_model.dart';
-import '../../memories/data/memory_repository.dart';
-import '../../reminders/data/reminder_repository.dart';
+import 'package:kee/core/constants/app_spacing.dart';
+import 'package:kee/core/intelligence/local_ai_runner.dart';
+import 'package:kee/core/intelligence/ai_abstraction.dart';
+import 'package:kee/features/memories/data/memory_model.dart';
+import 'package:kee/features/memories/data/memory_repository.dart';
+import 'package:kee/features/reminders/data/reminder_repository.dart';
 
 class ChatMessage {
   final String text;

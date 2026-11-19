@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
-import '../../core/constants/app_spacing.dart';
-import '../../core/intelligence/deterministic_classifier.dart';
-import '../../features/memories/data/memory_model.dart';
-import '../../features/memories/data/memory_repository.dart';
-import '../../features/reminders/data/task_model.dart';
-import '../../features/reminders/data/reminder_model.dart';
-import '../../features/reminders/data/reminder_repository.dart';
+import 'package:kee/core/constants/app_spacing.dart';
+import 'package:kee/core/intelligence/deterministic_classifier.dart';
+import 'package:kee/features/memories/data/memory_model.dart';
+import 'package:kee/features/memories/data/memory_repository.dart';
+import 'package:kee/features/reminders/data/task_model.dart';
+import 'package:kee/features/reminders/data/reminder_model.dart';
+import 'package:kee/features/reminders/data/reminder_repository.dart';
 
 class QuickCaptureSheet extends ConsumerStatefulWidget {
   final String? initialText;

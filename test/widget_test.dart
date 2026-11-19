@@ -2,9 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kee/core/intelligence/deterministic_classifier.dart';
 import 'package:kee/core/intelligence/nlp_date_parser.dart';
 import 'package:kee/core/intelligence/recall_engine.dart';
-import 'package:kee/features/memories/data/memory_model.dart';
 import 'package:kee/features/reminders/data/task_model.dart';
-import 'package:kee/features/reminders/data/reminder_model.dart';
 
 void main() {
   group('Deterministic Intelligence & Date Parsing Tests', () {

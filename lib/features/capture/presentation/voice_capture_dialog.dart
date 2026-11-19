@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import '../../core/constants/app_spacing.dart';
+import 'package:kee/core/constants/app_spacing.dart';
 import 'quick_capture_sheet.dart';
 
 class VoiceCaptureDialog extends StatefulWidget {

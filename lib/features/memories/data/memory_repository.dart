@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/database/database_helper.dart';
-import '../../core/database/database_tables.dart';
+import 'package:kee/core/database/database_helper.dart';
+import 'package:kee/core/database/database_tables.dart';
 import 'memory_model.dart';
 
 final memoryRepositoryProvider = Provider<MemoryRepository>((ref) {

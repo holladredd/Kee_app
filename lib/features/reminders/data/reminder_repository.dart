@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/database/database_helper.dart';
-import '../../core/database/database_tables.dart';
-import '../../core/notifications/notification_service.dart';
+import 'package:kee/core/database/database_helper.dart';
+import 'package:kee/core/database/database_tables.dart';
+import 'package:kee/core/notifications/notification_service.dart';
 import 'task_model.dart';
 import 'reminder_model.dart';
 

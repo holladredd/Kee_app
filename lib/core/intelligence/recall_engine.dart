@@ -112,7 +112,7 @@ class RecallEngine implements AiAssistantEngine {
     if (qLower.contains('promise') || qLower.contains('commitment') || qLower.contains('unfulfilled')) {
       final commitments = memories.where((m) => m.memoryType == 'commitment').toList();
       if (commitments.isNotEmpty) {
-        final list = commitments.map((c) => '• ${c.title} (${c.associatedPerson != null ? "To " + c.associatedPerson! : "No person specified"})').join('\n');
+        final list = commitments.map((c) => '• ${c.title} (${c.associatedPerson != null ? "To ${c.associatedPerson}" : "No person specified"})').join('\n');
         return RecallAnswer(
           text: 'Here are the commitments and promises you have saved:\n\n$list',
           citedMemories: commitments,
