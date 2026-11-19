@@ -43,7 +43,7 @@ class KeeLogo extends StatelessWidget {
               width: size,
               height: size,
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => _vectorFallback(isDark),
+              errorBuilder: (_, __, ___) => _vectorFallback(isDark),
             )
           : Padding(
               padding: EdgeInsets.all(size * 0.12),
@@ -52,7 +52,7 @@ class KeeLogo extends StatelessWidget {
                 width: size,
                 height: size,
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => _vectorFallback(isDark),
+                errorBuilder: (_, __, ___) => _vectorFallback(isDark),
               ),
             ),
     );
