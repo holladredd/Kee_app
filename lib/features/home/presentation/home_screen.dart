@@ -9,7 +9,6 @@ import '../../capture/presentation/voice_capture_dialog.dart';
 import '../../memories/data/memory_model.dart';
 import '../../memories/data/memory_repository.dart';
 import '../../reminders/data/reminder_model.dart';
-import '../../reminders/data/task_model.dart';
 import '../../reminders/data/reminder_repository.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -27,7 +26,6 @@ class HomeScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final memoriesAsync = ref.watch(memoriesStreamProvider);
     final remindersAsync = ref.watch(remindersStreamProvider);
-    final tasksAsync = ref.watch(tasksStreamProvider);
 
     return Scaffold(
       body: SafeArea(
