@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/widgets/kee_logo.dart';
+import '../../../core/widgets/kee_onboarding_sheet.dart';
 import '../../capture/presentation/quick_capture_sheet.dart';
 import '../../capture/presentation/voice_capture_dialog.dart';
 import '../../memories/data/memory_model.dart';
@@ -11,8 +12,21 @@ import '../../memories/data/memory_repository.dart';
 import '../../reminders/data/reminder_model.dart';
 import '../../reminders/data/reminder_repository.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      KeeOnboardingSheet.checkAndShow(context);
+    });
+  }
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -22,8 +36,9 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final memoriesAsync = ref.watch(memoriesStreamProvider);
     final remindersAsync = ref.watch(remindersStreamProvider);
 
@@ -50,23 +65,49 @@ class HomeScreen extends ConsumerWidget {
                   children: [
                     Row(
                       children: [
-                        const KeeLogo(size: 44),
+                        GestureDetector(
+                          onTap: () => KeeOnboardingSheet.show(context, isReview: true),
+                          child: const KeeLogo(size: 44),
+                        ),
                         const SizedBox(width: AppSpacing.sm),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            Row(
+                              children: [
+                                Text(
+                                  'Kee',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.8,
+                                    color: isDark ? const Color(0xFFE8D0B2) : const Color(0xFFA6855B),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '· Knowledge Extension Entity',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    letterSpacing: 0.2,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
                             Text(
                               _getGreeting(),
-                              style: theme.textTheme.titleLarge?.copyWith(
+                              style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.w700,
                                 letterSpacing: -0.5,
                               ),
                             ),
-                            const SizedBox(height: 2),
                             Text(
                               DateFormat('EEEE, MMMM d').format(DateTime.now()),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
+                                fontSize: 11,
                               ),
                             ),
                           ],
@@ -111,7 +152,7 @@ class HomeScreen extends ConsumerWidget {
                         const SizedBox(width: AppSpacing.sm),
                         Expanded(
                           child: Text(
-                            'Tell Kee anything. It remembers...',
+                            'Capture what matters. Your memory, extended...',
                             style: TextStyle(
                               color: theme.colorScheme.onSurfaceVariant,
                               fontSize: 15,
@@ -177,14 +218,14 @@ class HomeScreen extends ConsumerWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Ask Kee anything',
+                                'Ask Kee · Knowledge Extension Entity',
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Instant recall across all your memories & tasks',
+                                'Natural recall across your memories, commitments & tasks',
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
@@ -221,7 +262,7 @@ class HomeScreen extends ConsumerWidget {
                       return _buildEmptyCard(
                         context,
                         icon: Icons.notifications_none_rounded,
-                        message: 'No upcoming reminders. You are all caught up!',
+                        message: 'No upcoming reminders. All commitments are clear.',
                       );
                     }
 
@@ -252,7 +293,7 @@ class HomeScreen extends ConsumerWidget {
                       return _buildEmptyCard(
                         context,
                         icon: Icons.note_alt_outlined,
-                        message: 'No memories saved yet. Try saving a note or thought above.',
+                        message: 'No memories saved yet. Entrust notes, ideas, or thoughts to Kee.',
                       );
                     }
 

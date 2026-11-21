@@ -72,7 +72,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with SingleTi
                   context,
                   icon: Icons.alarm_off_rounded,
                   title: 'No reminders set',
-                  subtitle: 'Use quick capture to create reminders naturally, e.g. "Call David tomorrow at 5pm"',
+                  subtitle: 'Capture what matters naturally to let Kee manage reminders and extend your memory.',
                 );
               }
 
@@ -104,7 +104,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with SingleTi
                   context,
                   icon: Icons.check_circle_outline_rounded,
                   title: 'All tasks completed!',
-                  subtitle: 'Tell Kee when you have something new to do.',
+                  subtitle: 'Capture tasks with Kee to keep commitments clear and your memory extended.',
                 );
               }
 

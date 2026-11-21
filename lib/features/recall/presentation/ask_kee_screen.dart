@@ -48,7 +48,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
     super.initState();
     _messages.add(
       ChatMessage(
-        text: 'Hello! Ask me anything you have saved in Kee. I recall tasks, promises, ideas, preferences, and memories offline.',
+        text: 'Meet Kee, your Knowledge Extension Entity. A personal intelligence that helps you capture what matters, remember what you forget, and retrieve information whenever you need it.\n\nAsk me anything you have entrusted to memory—tasks, promises, ideas, preferences, or records. Your memory. Extended.',
         isUser: false,
         timestamp: DateTime.now(),
       ),
@@ -155,7 +155,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  '${engine.name} • 100% Offline',
+                  '${engine.name} • Knowledge Extension Entity',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                     fontSize: 11,
@@ -245,7 +245,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                       textInputAction: TextInputAction.send,
                       onSubmitted: _handleAsk,
                       decoration: const InputDecoration(
-                        hintText: 'Ask Kee about your memories or tasks...',
+                        hintText: 'Ask Kee anything. Your memory, extended...',
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,

@@ -1,11 +1,11 @@
 {
-    "name": "Kee",
+    "name": "Kee · Knowledge Extension Entity",
     "short_name": "Kee",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#080A0C",
-    "theme_color": "#080A0C",
-    "description": "Kee - Personal offline-first memory and task assistant.",
+    "background_color": "#050505",
+    "theme_color": "#050505",
+    "description": "Kee (Knowledge Extension Entity) - Your memory. Extended.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

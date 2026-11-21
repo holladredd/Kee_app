@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/widgets/kee_logo.dart';
+import '../../../core/widgets/kee_onboarding_sheet.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/notifications/notification_service.dart';
 import '../../../core/intelligence/local_ai_runner.dart';
@@ -200,10 +201,34 @@ class SettingsScreen extends ConsumerWidget {
           // Section: About
           _buildSectionTitle(theme, 'About'),
           Card(
-            child: ListTile(
-              leading: const KeeLogo(size: 38),
-              title: const Text('Kee v1.0.0'),
-              subtitle: const Text('Personal Memory & Task Assistant'),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const KeeLogo(size: 42),
+                  title: const Text(
+                    'Kee',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: const Text(
+                    'K.E.E. · Knowledge Extension Entity\nYour memory. Extended.',
+                  ),
+                  isThreeLine: true,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.info_outline_rounded),
+                  title: const Text('Brand Philosophy & Introduction'),
+                  subtitle: const Text('Review what Kee is and how it extends your memory'),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                  onTap: () => KeeOnboardingSheet.show(context, isReview: true),
+                ),
+                const Divider(height: 1),
+                const ListTile(
+                  leading: Icon(Icons.verified_outlined),
+                  title: Text('Version 1.0.0'),
+                  subtitle: Text('Local-First Personal Technology'),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: AppSpacing.xxl),

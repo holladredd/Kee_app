@@ -1,67 +1,79 @@
-# Kee Mobile Application (Android-First)
+# Kee — Knowledge Extension Entity
 
-**Kee** is an Android-first personal memory and task assistant built with Flutter.
+> **Your memory. Extended.**
 
-> *"Tell Kee anything. It remembers. Ask Kee anything. It recalls."*
+**Kee** (K.E.E. · Knowledge Extension Entity) is a personal AI memory and intelligence assistant built with Flutter.
 
----
-
-## Key Features
-
-1. **Quick Capture**:
-   - Save thoughts, tasks, ideas, preferences, or promises in seconds.
-   - Live intelligent classification preview that automatically identifies the intent (Task, Reminder, Idea, Commitment, Preference, Date, Shopping, Reference).
-   - Distinguishes ideas from tasks (never creates false reminders for creative ideas).
-2. **Offline-First SQLite Persistence**:
-   - All memories, tasks, and reminders are saved locally in SQLite (`sqflite`).
-   - Works 100% offline without needing any cloud API or backend server.
-3. **Deterministic NLP Date Parsing & Local Reminders**:
-   - Parses natural expressions: *"tomorrow"*, *"next Friday"*, *"in 2 weeks"*, *"at the end of the month"*, *"every Monday"*, *"every 3 days"*.
-   - Uses local Android notifications (`flutter_local_notifications`) for alarms and reminders that fire even when offline.
-4. **Conversational Recall ("Ask Kee")**:
-   - Grounded retrieval-first assistant that searches your local records and answers queries without hallucination.
-   - Shows tap-to-view source citations for retrieved memories.
-5. **Dark Mode & Design System**:
-   - Complete light and dark themes using semantic `Theme.of(context)` styling.
-   - Clean Material 3 design with accessible spacing and typography.
-6. **Voice Input**:
-   - On-device speech-to-text with review-and-edit workflow before saving.
-7. **Zero Monetization or Paid AI Dependencies**:
-   - Genuinely free product: no advertisements, no subscriptions, no cloud AI limits or mandatory accounts.
+*"Meet Kee, your Knowledge Extension Entity. A personal intelligence that helps you capture what matters, remember what you forget, and retrieve information whenever you need it."*
 
 ---
 
-## Running on your Physical Android Device
+## Brand Identity & Philosophy
 
-### Prerequisites:
-1. Turn on **Developer Options** and enable **USB Debugging** on your Android phone.
-2. Connect your phone via USB and allow debugging permissions when prompted on the screen.
+- **Name:** Kee
+- **Full Identity:** K.E.E.
+- **Meaning:** Knowledge Extension Entity
+- **Tagline:** Your memory. Extended.
+- **Aesthetic:** Inspired by NØVARÉ minimalism — architectural obsidian (`#050505`) and warm champagne ivory linen (`#FBF2E6`). Serious, refined, personal technology.
 
-### 1. Verify Connected Device
+Kee is designed as a direct cognitive extension of the user. Rather than an external chatbot or a generic cloud assistant, Kee serves as a private, on-device intelligence layer that ensures what matters to you is captured accurately, remembered reliably, and recalled effortlessly.
+
+---
+
+## Core Capabilities
+
+1. **Capture What Matters**:
+   - Frictionless quick-capture for thoughts, tasks, ideas, preferences, commitments, and voice notes.
+   - Live deterministic intent classification (Task, Reminder, Idea, Commitment, Preference, Date, Shopping, Reference).
+   - Protects creative ideas from being converted into false tasks.
+
+2. **Remember What You Forget**:
+   - Deterministic NLP date parsing: relative, recurring, and natural-language deadlines (*"tomorrow"*, *"next Friday"*, *"every Monday at 9am"*).
+   - Offline local notifications (`flutter_local_notifications`) that fire reliably without network connectivity.
+
+3. **Natural Offline Recall ("Ask Kee")**:
+   - Conversational recall grounded strictly in your personal records.
+   - Zero hallucination guarantee: retrieves verified memories and highlights tap-to-view source citations.
+
+4. **100% Local-First & Private**:
+   - On-device SQLite persistence (`sqflite`).
+   - No paid cloud AI dependencies, no telemetry, no tracking, and no subscriptions.
+
+5. **Adaptive Design System**:
+   - Dual theme system: Pure Obsidian Dark and Warm Alabaster Light.
+   - Full semantic `Theme.of(context)` styling with zero hardcoded colors.
+
+---
+
+## Running the Application
+
+### 1. Web Browser Preview (Edge / Chrome)
 ```bash
-adb devices
+# Instant local web preview
+python3 -m http.server 8080 --directory build/web
+
+# Or live Flutter dev mode
+flutter run -d chrome
 ```
 
-### 2. Run Directly on Phone
+### 2. Physical Android Device
 ```bash
+# Verify device
+adb devices
+
+# Run in debug mode
 flutter run
 ```
 
-### 3. Build Debug APK
-If you want to generate an installable APK file directly:
+### 3. Build APK
 ```bash
 flutter build apk --debug
 ```
-The APK will be generated at:
-`build/app/outputs/flutter-apk/app-debug.apk`
 
 ---
 
 ## Architecture
 
-- **State Management**: Riverpod (`flutter_riverpod`)
-- **Navigation**: GoRouter (`go_router`) with StatefulShellRoute for Bottom Navigation
-- **Local Database**: SQLite (`sqflite`)
-- **Local Notifications**: `flutter_local_notifications`
-- **Audio / Speech**: `speech_to_text`
-- **Data Layer**: Clean Repository pattern with outbox sync queue support
+- **`lib/core/`**: Intelligence layer (deterministic classification, date parsing, recall engine), SQLite database, notifications, and theme providers.
+- **`lib/features/`**: Feature-driven modules (capture, home, memories, reminders, recall, settings).
+- **`lib/core/widgets/`**: Reusable UI components including the official `KeeLogo` and `KeeOnboardingSheet`.

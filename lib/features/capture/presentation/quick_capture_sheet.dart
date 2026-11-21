@@ -193,11 +193,24 @@ class _QuickCaptureSheetState extends ConsumerState<QuickCaptureSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Capture Anything',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Capture What Matters',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'Your memory. Extended.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 0.3,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
               IconButton(
                 icon: const Icon(Icons.close_rounded),
