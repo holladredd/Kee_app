@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/widgets/kee_logo.dart';
@@ -8,6 +9,7 @@ import '../../../core/widgets/kee_onboarding_sheet.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/notifications/notification_service.dart';
 import '../../../core/intelligence/local_ai_runner.dart';
+import '../../../core/providers/auth_provider.dart';
 import '../../memories/data/memory_repository.dart';
 import '../../reminders/data/reminder_repository.dart';
 
@@ -198,6 +200,39 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.lg),
 
+          // Section: Account
+          _buildSectionTitle(theme, 'Account'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.person_outline_rounded),
+                  title: const Text('Signed in as'),
+                  subtitle: Text(
+                    ref.watch(currentUserProvider)?.email ?? 'Not signed in',
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(
+                    Icons.logout_rounded,
+                    color: theme.colorScheme.error,
+                  ),
+                  title: Text(
+                    'Sign Out',
+                    style: TextStyle(
+                      color: theme.colorScheme.error,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  subtitle: const Text('You will need to sign in again'),
+                  onTap: () => _showLogoutConfirmation(context, ref),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+
           // Section: About
           _buildSectionTitle(theme, 'About'),
           Card(
@@ -248,6 +283,72 @@ class SettingsScreen extends ConsumerWidget {
           letterSpacing: 0.8,
           color: theme.colorScheme.onSurfaceVariant,
         ),
+      ),
+    );
+  }
+
+  void _showLogoutConfirmation(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = isDark
+        ? const Color(0xFFE8D0B2)
+        : const Color(0xFFA6855B);
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: theme.colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        ),
+        icon: Icon(
+          Icons.logout_rounded,
+          color: accentColor,
+          size: 40,
+        ),
+        title: Text(
+          'Sign Out?',
+          style: TextStyle(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          'Your local data will be preserved. You can sign back in anytime.',
+          style: TextStyle(
+            color: isDark
+                ? theme.colorScheme.onSurfaceVariant
+                : theme.colorScheme.onSurface,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await ref.read(authProvider.notifier).logout();
+              if (context.mounted) {
+                context.go('/login');
+              }
+            },
+            child: Text(
+              'Sign Out',
+              style: TextStyle(
+                color: theme.colorScheme.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
