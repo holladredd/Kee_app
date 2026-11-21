@@ -31,7 +31,11 @@ class TestMemoryRepository extends MemoryRepository {
   }
 
   @override
-  Future<List<MemoryModel>> getAllMemories({String? category, String? memoryType, String? searchQuery}) async {
+  Future<List<MemoryModel>> getAllMemories({
+    String? category,
+    String? query,
+    bool includeDeleted = false,
+  }) async {
     return List.from(_storage);
   }
 }
@@ -58,7 +62,10 @@ class TestReminderRepository extends ReminderRepository {
   }
 
   @override
-  Future<List<TaskModel>> getTasks({bool pendingOnly = false}) async {
+  Future<List<TaskModel>> getTasks({String? status}) async {
+    if (status != null) {
+      return _tasks.where((t) => t.status == status).toList();
+    }
     return List.from(_tasks);
   }
 }
