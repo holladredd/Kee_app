@@ -179,31 +179,14 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   children: [
                     const SizedBox(height: AppSpacing.xxl),
 
-                    // ─── Logo & Brand ─────────────────────
-                    Center(child: KeeLogo(size: 72)),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      'Kee',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurface,
-                        letterSpacing: -0.5,
+                    // ─── Official Logo Only ─────────────────
+                    const Center(
+                      child: KeeLogo(
+                        size: 100,
+                        showBackground: false,
                       ),
                     ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      'Knowledge Extension Entity',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400,
-                        color: accentColor,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl),
+                    const SizedBox(height: AppSpacing.xxl),
 
                     // ─── Heading ──────────────────────────
                     Text(
@@ -375,20 +358,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl),
-
-                    // ─── Tagline ──────────────────────────
-                    Text(
-                      'Your memory. Extended.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.6),
-                        fontStyle: FontStyle.italic,
-                        letterSpacing: 0.5,
-                      ),
                     ),
                     const SizedBox(height: AppSpacing.xxl),
                   ],
