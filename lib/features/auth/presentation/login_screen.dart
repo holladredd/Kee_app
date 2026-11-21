@@ -103,8 +103,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final isSubmitting = authState.isSubmitting;
 
     final accentColor = isDark
-        ? const Color(0xFFE8D0B2)  // Warm champagne
-        : const Color(0xFFA6855B); // Warm gold
+        ? const Color(0xFFE8D0B2)
+        : const Color(0xFFA6855B);
 
     return Scaffold(
       body: SafeArea(
@@ -119,35 +119,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const SizedBox(height: AppSpacing.xl),
+
+                    // ─── Official Logo Only ─────────────────
+                    const Center(
+                      child: KeeLogo(
+                        size: 110,
+                        showBackground: false,
+                      ),
+                    ),
                     const SizedBox(height: AppSpacing.xxl),
 
-                    // ─── Logo & Brand ─────────────────────
-                    Center(child: KeeLogo(size: 80)),
-                    const SizedBox(height: AppSpacing.lg),
-                    Text(
-                      'Kee',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurface,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxs),
-                    Text(
-                      'Knowledge Extension Entity',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w400,
-                        color: accentColor,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl),
-
-                    // ─── Welcome Text ─────────────────────
+                    // ─── Welcome Header ───────────────────
                     Text(
                       'Welcome back',
                       style: TextStyle(
@@ -159,7 +142,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const SizedBox(height: AppSpacing.xxs),
                     Text(
-                      'Sign in to access your memories',
+                      'Sign in to access your personal intelligence',
                       style: TextStyle(
                         fontSize: 14,
                         color: theme.colorScheme.onSurfaceVariant,
@@ -276,20 +259,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: AppSpacing.xxxl),
-
-                    // ─── Tagline ──────────────────────────
-                    Text(
-                      'Your memory. Extended.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.6),
-                        fontStyle: FontStyle.italic,
-                        letterSpacing: 0.5,
-                      ),
                     ),
                     const SizedBox(height: AppSpacing.xxl),
                   ],
