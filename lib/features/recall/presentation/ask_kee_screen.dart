@@ -337,10 +337,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                             tooltip: 'Voice Input',
                             color: theme.colorScheme.onSurfaceVariant,
                             onPressed: () async {
-                              final text = await VoiceCaptureDialog.show(context);
-                              if (text != null && text.isNotEmpty) {
-                                _handleSendMessage(text);
-                              }
+                              await VoiceCaptureDialog.show(context);
                             },
                           ),
                         ],

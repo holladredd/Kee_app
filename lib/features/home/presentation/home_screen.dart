@@ -191,12 +191,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               icon: const Icon(Icons.mic_none_rounded),
                               tooltip: 'Voice Input',
                               onPressed: () async {
-                                final text = await VoiceCaptureDialog.show(context);
-                                if (text != null && text.isNotEmpty) {
-                                  if (context.mounted) {
-                                    context.go('/ask-kee');
-                                  }
-                                }
+                                await VoiceCaptureDialog.show(context);
                               },
                             ),
                             IconButton(
