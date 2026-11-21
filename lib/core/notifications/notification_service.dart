@@ -41,6 +41,10 @@ class NotificationService {
 
     if (androidImpl != null) {
       final granted = await androidImpl.requestNotificationsPermission();
+      // On Android 13+, request exact alarms if available
+      try {
+        await androidImpl.requestExactAlarmsPermission();
+      } catch (_) {}
       return granted ?? false;
     }
     return true;

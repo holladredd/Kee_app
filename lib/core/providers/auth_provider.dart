@@ -105,7 +105,8 @@ class AuthNotifier extends Notifier<AuthState> {
         clearError: true,
       );
     } else {
-      // Token invalid/expired — roll back to unauthenticated
+      // Token invalid/expired or server unreachable with bad session — clear token and roll back
+      await _authService.logout();
       state = state.copyWith(
         status: AuthStatus.unauthenticated,
         isValidating: false,

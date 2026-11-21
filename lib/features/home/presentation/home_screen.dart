@@ -5,11 +5,8 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/widgets/kee_logo.dart';
 import '../../../core/widgets/kee_onboarding_sheet.dart';
-import '../../capture/presentation/quick_capture_sheet.dart';
 import '../../capture/presentation/voice_capture_dialog.dart';
-import '../../memories/data/memory_model.dart';
 import '../../memories/data/memory_repository.dart';
-import '../../reminders/data/reminder_model.dart';
 import '../../reminders/data/reminder_repository.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -20,12 +17,20 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final TextEditingController _quickInputController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       KeeOnboardingSheet.checkAndShow(context);
     });
+  }
+
+  @override
+  void dispose() {
+    _quickInputController.dispose();
+    super.dispose();
   }
 
   String _getGreeting() {
@@ -42,24 +47,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final memoriesAsync = ref.watch(memoriesStreamProvider);
     final remindersAsync = ref.watch(remindersStreamProvider);
 
+    final accentColor = isDark
+        ? const Color(0xFFE8D0B2)
+        : const Color(0xFFA6855B);
+
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
             ref.invalidate(memoriesStreamProvider);
             ref.invalidate(remindersStreamProvider);
-            ref.invalidate(tasksStreamProvider);
           },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
+              horizontal: AppSpacing.lg,
               vertical: AppSpacing.lg,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 1. Friendly Greeting Header
+                const SizedBox(height: AppSpacing.xs),
+
+                // ─── 1. Brand & Header ────────────────────────
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -67,7 +77,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       children: [
                         GestureDetector(
                           onTap: () => KeeOnboardingSheet.show(context, isReview: true),
-                          child: const KeeLogo(size: 44),
+                          child: const KeeLogo(size: 40),
                         ),
                         const SizedBox(width: AppSpacing.sm),
                         Column(
@@ -78,17 +88,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 Text(
                                   'Kee',
                                   style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.8,
-                                    color: isDark ? const Color(0xFFE8D0B2) : const Color(0xFFA6855B),
+                                    letterSpacing: 0.5,
+                                    color: accentColor,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   '· Knowledge Extension Entity',
                                   style: TextStyle(
-                                    fontSize: 10,
+                                    fontSize: 11,
                                     letterSpacing: 0.2,
                                     color: theme.colorScheme.onSurfaceVariant,
                                   ),
@@ -97,216 +107,209 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              _getGreeting(),
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            Text(
-                              DateFormat('EEEE, MMMM d').format(DateTime.now()),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
+                              'Your memory. Extended.',
+                              style: TextStyle(
                                 fontSize: 11,
+                                fontStyle: FontStyle.italic,
+                                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                               ),
                             ),
                           ],
                         ),
                       ],
                     ),
-                    IconButton.filledTonal(
-                      icon: const Icon(Icons.mic_rounded),
-                      tooltip: 'Voice capture',
-                      onPressed: () => VoiceCaptureDialog.show(context),
-                    ),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.xxl),
 
-                // 2. Prominent Quick Capture Bar
-                GestureDetector(
-                  onTap: () => QuickCaptureSheet.show(context),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
-                      vertical: AppSpacing.md,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                      border: Border.all(color: theme.colorScheme.outline),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.add_circle_outline_rounded,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: AppSpacing.sm),
-                        Expanded(
-                          child: Text(
-                            'Capture what matters. Your memory, extended...',
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurfaceVariant,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xs,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                          ),
-                          child: Text(
-                            'CAPTURE',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                // ─── 2. Conversational Greeting ────────────────
+                Text(
+                  _getGreeting(),
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xxs),
+                Text(
+                  'Talk naturally to Kee. Tell me what to remember, schedule a reminder, or ask about anything you’ve saved.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    height: 1.5,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
 
-                // 3. Quick "Ask Kee" recall banner
-                InkWell(
-                  onTap: () => context.go('/ask-kee'),
-                  borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                  child: Container(
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          theme.colorScheme.primary.withOpacity(0.08),
-                          theme.colorScheme.secondary.withOpacity(0.04),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-                      border: Border.all(
-                        color: theme.colorScheme.primary.withOpacity(0.2),
-                      ),
+                // ─── 3. Prominent Conversational Entry Point ───
+                Container(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surface,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                    border: Border.all(
+                      color: theme.colorScheme.outline.withValues(alpha: 0.6),
                     ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: theme.colorScheme.primary.withOpacity(0.15),
-                          child: Icon(
-                            Icons.psychology_alt_rounded,
-                            color: theme.colorScheme.primary,
-                          ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: isDark
+                            ? Colors.black.withValues(alpha: 0.3)
+                            : Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md,
+                          vertical: AppSpacing.xs,
                         ),
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _quickInputController,
+                                decoration: InputDecoration(
+                                  hintText: 'Talk to Kee or ask a question...',
+                                  hintStyle: TextStyle(
+                                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                                    fontSize: 14,
+                                  ),
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                ),
+                                onSubmitted: (val) {
+                                  if (val.trim().isNotEmpty) {
+                                    context.go('/ask-kee');
+                                  }
+                                },
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.mic_none_rounded),
+                              tooltip: 'Voice Input',
+                              onPressed: () async {
+                                final text = await VoiceCaptureDialog.show(context);
+                                if (text != null && text.isNotEmpty) {
+                                  if (context.mounted) {
+                                    context.go('/ask-kee');
+                                  }
+                                }
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.arrow_forward_rounded),
+                              tooltip: 'Open Ask Kee',
+                              onPressed: () => context.go('/ask-kee'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Divider(height: 1, color: theme.colorScheme.outline.withValues(alpha: 0.3)),
+                      InkWell(
+                        onTap: () => context.go('/ask-kee'),
+                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(AppSpacing.radiusLg)),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                'Ask Kee · Knowledge Extension Entity',
-                                style: theme.textTheme.titleSmall?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                              Row(
+                                children: [
+                                  Icon(Icons.chat_bubble_outline_rounded, size: 14, color: accentColor),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Open full conversation with Kee',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: accentColor,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Natural recall across your memories, commitments & tasks',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
+                              Icon(Icons.chevron_right_rounded, size: 16, color: accentColor),
                             ],
                           ),
                         ),
-                        Icon(
-                          Icons.arrow_forward_ios_rounded,
-                          size: 14,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
 
-                // 4. Upcoming Reminders Section
-                _buildSectionHeader(
-                  context,
-                  title: 'Upcoming Reminders',
-                  onSeeAll: () => context.go('/reminders'),
+                // ─── 4. Conversational Quick Prompts ───────────
+                Text(
+                  'TRY SAYING TO KEE',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.8,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _buildPromptTile(
+                  context: context,
+                  icon: Icons.alarm_rounded,
+                  title: 'Remind me to call John tomorrow at 9 AM',
+                  subtitle: 'Creates a local reminder and schedules device notification',
+                  onTap: () => context.go('/ask-kee'),
                 ),
                 const SizedBox(height: AppSpacing.xs),
-                remindersAsync.when(
-                  data: (reminders) {
-                    final upcoming = reminders
-                        .where((r) => r.isEnabled && r.scheduledAt.isAfter(DateTime.now()))
-                        .take(3)
-                        .toList();
-
-                    if (upcoming.isEmpty) {
-                      return _buildEmptyCard(
-                        context,
-                        icon: Icons.notifications_none_rounded,
-                        message: 'No upcoming reminders. All commitments are clear.',
-                      );
-                    }
-
-                    return Column(
-                      children: upcoming.map((r) => _buildReminderItem(context, ref, r)).toList(),
-                    );
-                  },
-                  loading: () => const Center(child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: CircularProgressIndicator(),
-                  )),
-                  error: (e, _) => Text('Error loading reminders: $e'),
+                _buildPromptTile(
+                  context: context,
+                  icon: Icons.thumb_up_alt_outlined,
+                  title: 'I prefer working early in the morning',
+                  subtitle: 'Stores your personal preference for future context',
+                  onTap: () => context.go('/ask-kee'),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                _buildPromptTile(
+                  context: context,
+                  icon: Icons.cake_outlined,
+                  title: 'My mum\'s birthday is February 14',
+                  subtitle: 'Remembers important dates without setting alarms',
+                  onTap: () => context.go('/ask-kee'),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                _buildPromptTile(
+                  context: context,
+                  icon: Icons.search_rounded,
+                  title: 'What do I have scheduled tomorrow?',
+                  subtitle: 'Retrieves relevant memories and upcoming reminders',
+                  onTap: () => context.go('/ask-kee'),
                 ),
                 const SizedBox(height: AppSpacing.xl),
 
-                // 5. Recent Memories Section
-                _buildSectionHeader(
-                  context,
-                  title: 'Recent Memories',
-                  onSeeAll: () => context.go('/memories'),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                memoriesAsync.when(
-                  data: (memories) {
-                    final recent = memories.take(4).toList();
+                // ─── 5. Ambient Memory & Reminder Status ───────
+                remindersAsync.when(
+                  data: (reminders) {
+                    final now = DateTime.now();
+                    final upcoming = reminders
+                        .where((r) => r.isEnabled && r.scheduledAt.isAfter(now))
+                        .toList();
 
-                    if (recent.isEmpty) {
-                      return _buildEmptyCard(
-                        context,
-                        icon: Icons.note_alt_outlined,
-                        message: 'No memories saved yet. Entrust notes, ideas, or thoughts to Kee.',
-                      );
-                    }
-
-                    return Column(
-                      children: recent.map((m) => _buildMemoryItem(context, m)).toList(),
+                    return memoriesAsync.when(
+                      data: (memories) {
+                        return _buildStatusCard(
+                          context,
+                          memoriesCount: memories.length,
+                          remindersCount: upcoming.length,
+                          nextReminder: upcoming.isNotEmpty ? upcoming.first : null,
+                        );
+                      },
+                      loading: () => const SizedBox.shrink(),
+                      error: (_, __) => const SizedBox.shrink(),
                     );
                   },
-                  loading: () => const Center(child: Padding(
-                    padding: EdgeInsets.all(16.0),
-                    child: CircularProgressIndicator(),
-                  )),
-                  error: (e, _) => Text('Error loading memories: $e'),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
                 ),
+
+                const SizedBox(height: AppSpacing.xxl),
               ],
             ),
           ),
@@ -315,99 +318,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildSectionHeader(
-    BuildContext context, {
+  Widget _buildPromptTile({
+    required BuildContext context,
+    required IconData icon,
     required String title,
-    required VoidCallback onSeeAll,
+    required String subtitle,
+    required VoidCallback onTap,
   }) {
     final theme = Theme.of(context);
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
+    final isDark = theme.brightness == Brightness.dark;
+
+    final accentColor = isDark
+        ? const Color(0xFFE8D0B2)
+        : const Color(0xFFA6855B);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          border: Border.all(
+            color: theme.colorScheme.outline.withValues(alpha: 0.5),
           ),
         ),
-        TextButton(
-          onPressed: onSeeAll,
-          child: const Text('See all', style: TextStyle(fontSize: 13)),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildReminderItem(BuildContext context, WidgetRef ref, ReminderModel reminder) {
-    final theme = Theme.of(context);
-    final timeStr = DateFormat('EEE, MMM d • h:mm a').format(reminder.scheduledAt);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: AppSpacing.xs),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: theme.colorScheme.primary.withOpacity(0.12),
-          child: Icon(Icons.alarm_rounded, color: theme.colorScheme.primary, size: 20),
-        ),
-        title: Text(
-          reminder.title,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        ),
-        subtitle: Text(
-          timeStr,
-          style: TextStyle(
-            fontSize: 12,
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.snooze_rounded, size: 20),
-          tooltip: 'Snooze 1 hour',
-          onPressed: () async {
-            await ref.read(reminderRepositoryProvider).snoozeReminder(
-              reminder.id,
-              const Duration(hours: 1),
-            );
-            ref.invalidate(remindersStreamProvider);
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMemoryItem(BuildContext context, MemoryModel memory) {
-    final theme = Theme.of(context);
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: AppSpacing.xs),
-      child: InkWell(
-        onTap: () => context.go('/memories/detail/${memory.id}'),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: accentColor.withValues(alpha: 0.12),
+              child: Icon(icon, size: 16, color: accentColor),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      memory.category.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
+                  Text(
+                    '"$title"',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
                     ),
                   ),
+                  const SizedBox(height: 1),
                   Text(
-                    DateFormat('MMM d').format(memory.createdAt),
+                    subtitle,
                     style: TextStyle(
                       fontSize: 11,
                       color: theme.colorScheme.onSurfaceVariant,
@@ -415,55 +374,95 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              Text(
-                memory.title,
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                memory.originalContent,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
+            ),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 16,
+              color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildEmptyCard(
+  Widget _buildStatusCard(
     BuildContext context, {
-    required IconData icon,
-    required String message,
+    required int memoriesCount,
+    required int remindersCount,
+    dynamic nextReminder,
   }) {
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.lg,
+    final isDark = theme.brightness == Brightness.dark;
+
+    final accentColor = isDark
+        ? const Color(0xFFE8D0B2)
+        : const Color(0xFFA6855B);
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF111112) : const Color(0xFFF3EFE9),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.5),
         ),
-        child: Row(
-          children: [
-            Icon(icon, color: theme.colorScheme.onSurfaceVariant, size: 24),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Text(
-                message,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.shield_outlined, size: 16, color: accentColor),
+              const SizedBox(width: 6),
+              Text(
+                'Personal Memory Status',
                 style: TextStyle(
-                  fontSize: 13,
-                  color: theme.colorScheme.onSurfaceVariant,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            'Kee is holding $memoriesCount memories and $remindersCount upcoming reminders safely on your device. Everything works offline.',
+            style: TextStyle(
+              fontSize: 12,
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1.4,
+            ),
+          ),
+          if (nextReminder != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.alarm_rounded, size: 14, color: accentColor),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Next: ${nextReminder.title} (${DateFormat('EEE, MMM d @ h:mm a').format(nextReminder.scheduledAt)})',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }

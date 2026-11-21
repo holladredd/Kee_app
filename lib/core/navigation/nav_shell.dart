@@ -25,16 +25,6 @@ class NavShell extends StatelessWidget {
             label: 'Home',
           ),
           NavigationDestination(
-            icon: Icon(Icons.auto_stories_outlined),
-            selectedIcon: Icon(Icons.auto_stories_rounded),
-            label: 'Memories',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.alarm_outlined),
-            selectedIcon: Icon(Icons.alarm_rounded),
-            label: 'Reminders',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.chat_bubble_outline_rounded),
             selectedIcon: Icon(Icons.chat_bubble_rounded),
             label: 'Ask Kee',

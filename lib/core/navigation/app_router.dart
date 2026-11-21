@@ -15,54 +15,70 @@ import 'nav_shell.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>();
 
-/// Creates the app router with optimistic auth-aware redirect logic.
-///
-/// OPTIMISTIC FLOW:
-/// 1. App starts at /splash — brief storage check
-/// 2. Token found → /home immediately (server validates in background)
-/// 3. No token → /login immediately
-/// 4. If background validation fails → redirect to /login with message
+/// Listenable that notifies GoRouter to re-evaluate its redirect logic
+/// whenever the Riverpod auth state changes.
+class AuthRouterListenable extends ChangeNotifier {
+  final Ref _ref;
+
+  AuthRouterListenable(this._ref) {
+    _ref.listen<AuthState>(
+      authProvider,
+      (previous, next) {
+        if (previous?.status != next.status) {
+          notifyListeners();
+        }
+      },
+    );
+  }
+}
+
+final authRouterListenableProvider = Provider<AuthRouterListenable>((ref) {
+  return AuthRouterListenable(ref);
+});
+
+/// Creates the app router with conversation-first primary navigation:
+/// 1. Home
+/// 2. Ask Kee
+/// 3. Settings
+/// (Memories and Reminders are preserved as accessible sub-routes)
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final authStatus = ref.watch(authStatusProvider);
+  final listenable = ref.watch(authRouterListenableProvider);
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
+    refreshListenable: listenable,
     initialLocation: '/splash',
     redirect: (context, state) {
-      final isInitializing = authStatus == AuthStatus.initializing;
-      final isAuthenticated = authStatus == AuthStatus.authenticated;
+      final authState = ref.read(authProvider);
+      final status = authState.status;
 
-      final currentPath = state.matchedLocation;
+      final matchedLocation = state.matchedLocation;
       final isAuthRoute =
-          currentPath == '/login' || currentPath == '/register';
-      final isSplash = currentPath == '/splash';
+          matchedLocation == '/login' || matchedLocation == '/register';
+      final isSplash = matchedLocation == '/splash';
 
-      // Still checking storage — stay on splash, don't redirect
-      if (isInitializing && isSplash) return null;
-
-      // Still initializing but somehow on a non-splash route — go to splash
-      if (isInitializing) return '/splash';
-
-      // Authenticated → leave splash/auth routes, go to home
-      if (isAuthenticated && (isAuthRoute || isSplash)) {
-        return '/home';
+      // 1. Initializing — stay on splash while checking token
+      if (status == AuthStatus.initializing) {
+        return isSplash ? null : '/splash';
       }
 
-      // Not authenticated → leave protected routes, go to login
-      if (!isAuthenticated && !isAuthRoute && !isSplash) {
-        return '/login';
+      // 2. Unauthenticated — force to login if not already on an auth screen
+      if (status == AuthStatus.unauthenticated) {
+        return isAuthRoute ? null : '/login';
       }
 
-      // Not authenticated and on splash → go to login
-      if (!isAuthenticated && isSplash) {
-        return '/login';
+      // 3. Authenticated — redirect away from splash, login, or register to home
+      if (status == AuthStatus.authenticated) {
+        if (isAuthRoute || isSplash) {
+          return '/home';
+        }
+        return null;
       }
 
-      // No redirect needed
       return null;
     },
     routes: [
-      // ─── Splash (shown only during storage check) ───
+      // ─── Splash Screen ──────────────────────────────
       GoRoute(
         path: '/splash',
         pageBuilder: (context, state) => const NoTransitionPage(
@@ -84,7 +100,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
 
-      // ─── Main App Shell (authenticated) ─────────────
+      // ─── Preserved Data Management Sub-routes ───────
+      GoRoute(
+        path: '/memories',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const MemoriesScreen(),
+        routes: [
+          GoRoute(
+            path: 'detail/:id',
+            parentNavigatorKey: _rootNavigatorKey,
+            builder: (context, state) {
+              final id = state.pathParameters['id'] ?? '';
+              return MemoryDetailScreen(memoryId: id);
+            },
+          ),
+        ],
+      ),
+      GoRoute(
+        path: '/reminders',
+        parentNavigatorKey: _rootNavigatorKey,
+        builder: (context, state) => const RemindersScreen(),
+      ),
+
+      // ─── Main Conversation-First Shell (3 Tabs) ─────
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
           return NavShell(navigationShell: navigationShell);
@@ -102,41 +140,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ],
           ),
 
-          // Branch 2: Memories
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/memories',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: MemoriesScreen(),
-                ),
-                routes: [
-                  GoRoute(
-                    path: 'detail/:id',
-                    parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) {
-                      final id = state.pathParameters['id'] ?? '';
-                      return MemoryDetailScreen(memoryId: id);
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          // Branch 3: Reminders
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/reminders',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: RemindersScreen(),
-                ),
-              ),
-            ],
-          ),
-
-          // Branch 4: Ask Kee
+          // Branch 2: Ask Kee (Primary Conversation Experience)
           StatefulShellBranch(
             routes: [
               GoRoute(
@@ -148,7 +152,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             ],
           ),
 
-          // Branch 5: Settings
+          // Branch 3: Settings (Controls & Privacy Vault)
           StatefulShellBranch(
             routes: [
               GoRoute(
