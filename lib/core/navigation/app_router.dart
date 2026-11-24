@@ -100,11 +100,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
 
-      // ─── Main Application Shell (Authenticated) ─────
+      // ─── Dedicated Chat Screen (Outside Shell: NO floating widget) ───
+      GoRoute(
+        path: '/ask-kee',
+        pageBuilder: (context, state) => const NoTransitionPage(
+          child: AskKeeScreen(),
+        ),
+      ),
+
+      // ─── Main Application Shell (Pages WITH Floating Assistant) ───
       ShellRoute(
         builder: (context, state, child) {
           return NavShell(
-            currentPath: state.uri.path,
+            currentPath: state.matchedLocation,
             child: child,
           );
         },
@@ -113,12 +121,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/home',
             pageBuilder: (context, state) => const NoTransitionPage(
               child: HomeScreen(),
-            ),
-          ),
-          GoRoute(
-            path: '/ask-kee',
-            pageBuilder: (context, state) => const NoTransitionPage(
-              child: AskKeeScreen(),
             ),
           ),
           GoRoute(

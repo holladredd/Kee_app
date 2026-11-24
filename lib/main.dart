@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/sync/background_walker_pipeline.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'core/navigation/app_router.dart';
@@ -23,6 +24,9 @@ class KeeApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Keep background walker pipeline active across the entire application
+    ref.watch(backgroundWalkerProvider);
+
     final themeMode = ref.watch(themeModeProvider);
     final router = ref.watch(appRouterProvider);
 
