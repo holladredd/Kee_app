@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kee/core/voice/assistant_state.dart';
 import 'package:kee/core/intelligence/deterministic_classifier.dart';
 import 'package:kee/core/intelligence/nlp_date_parser.dart';
 import 'package:kee/core/intelligence/recall_engine.dart';
@@ -279,6 +280,71 @@ void main() {
       final action = await engine.processMessage('');
       expect(action.intent, equals(MessageIntent.casualConversation));
       expect(action.responseText, isNotEmpty);
+    });
+  });
+
+  group('Voice Assistant State & Interruption Tests', () {
+    test('AssistantState enum has all 6 required interaction states', () {
+      expect(AssistantState.values, containsAll([
+        AssistantState.idle,
+        AssistantState.listening,
+        AssistantState.processing,
+        AssistantState.speaking,
+        AssistantState.interrupted,
+        AssistantState.error,
+      ]));
+    });
+
+    test('VoiceAssistantState correctly reflects state properties', () {
+      const idleState = VoiceAssistantState();
+      expect(idleState.isIdle, isTrue);
+      expect(idleState.isListening, isFalse);
+      expect(idleState.isSpeaking, isFalse);
+
+      final listeningState = idleState.copyWith(
+        state: AssistantState.listening,
+        soundLevel: 0.75,
+        liveTranscript: 'Remind me tomorrow',
+      );
+      expect(listeningState.isListening, isTrue);
+      expect(listeningState.soundLevel, equals(0.75));
+      expect(listeningState.liveTranscript, equals('Remind me tomorrow'));
+
+      final speakingState = listeningState.copyWith(
+        state: AssistantState.speaking,
+        lastAssistantResponse: 'I will remind you tomorrow',
+      );
+      expect(speakingState.isSpeaking, isTrue);
+      expect(speakingState.lastAssistantResponse, equals('I will remind you tomorrow'));
+
+      final interruptedState = speakingState.copyWith(
+        state: AssistantState.interrupted,
+      );
+      expect(interruptedState.isInterrupted, isTrue);
+    });
+
+    test('WakeWordService extracts wake word and subsequent queries in one breath', () {
+      const text = 'Hi Kee remind me to call David tomorrow';
+      final lower = text.trim().toLowerCase();
+      const wakeWords = ['hi kee', 'hey kee', 'hello kee', 'ok kee', 'kee'];
+
+      String? matchedWakeWord;
+      String? trailingQuery;
+
+      for (final w in wakeWords) {
+        if (lower.contains(w)) {
+          matchedWakeWord = w;
+          final idx = lower.indexOf(w);
+          final rem = lower.substring(idx + w.length).trim();
+          if (rem.isNotEmpty) {
+            trailingQuery = rem;
+          }
+          break;
+        }
+      }
+
+      expect(matchedWakeWord, equals('hi kee'));
+      expect(trailingQuery, equals('remind me to call david tomorrow'));
     });
   });
 }

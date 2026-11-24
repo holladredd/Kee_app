@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/voice/voice_assistant_controller.dart';
 import '../../../core/widgets/kee_logo.dart';
 import '../../../core/widgets/kee_onboarding_sheet.dart';
-import '../../capture/presentation/voice_capture_dialog.dart';
+import '../../../core/widgets/kee_voice_orb.dart';
 import '../../memories/data/memory_repository.dart';
 import '../../reminders/data/reminder_repository.dart';
 
@@ -140,26 +141,100 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 const SizedBox(height: AppSpacing.xl),
 
-                // ─── 3. Prominent Conversational Entry Point ───
+                // ─── 3. Voice-First Hero Card ───────────────────
                 Container(
                   decoration: BoxDecoration(
-                    color: theme.colorScheme.surface,
+                    color: isDark ? const Color(0xFF14120E) : const Color(0xFFFBF8F4),
                     borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
                     border: Border.all(
-                      color: theme.colorScheme.outline.withValues(alpha: 0.6),
+                      color: ref.watch(voiceAssistantProvider).isListening
+                          ? accentColor
+                          : (isDark ? const Color(0xFF2E271F) : const Color(0xFFE2D6C5)),
+                      width: ref.watch(voiceAssistantProvider).isListening ? 1.5 : 1.0,
                     ),
                     boxShadow: [
                       BoxShadow(
                         color: isDark
-                            ? Colors.black.withValues(alpha: 0.3)
-                            : Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 12,
+                            ? Colors.black.withValues(alpha: 0.45)
+                            : Colors.black.withValues(alpha: 0.06),
+                        blurRadius: 16,
                         offset: const Offset(0, 4),
                       ),
                     ],
                   ),
                   child: Column(
                     children: [
+                      InkWell(
+                        onTap: () {
+                          final assistant = ref.read(voiceAssistantProvider);
+                          final voiceCtrl = ref.read(voiceAssistantProvider.notifier);
+                          if (!assistant.isListening && !assistant.isSpeaking) {
+                            voiceCtrl.startListening();
+                          }
+                          context.go('/ask-kee');
+                        },
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusLg)),
+                        child: Padding(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          child: Row(
+                            children: [
+                              KeeVoiceOrb(
+                                state: ref.watch(voiceAssistantProvider).state,
+                                soundLevel: ref.watch(voiceAssistantProvider).soundLevel,
+                                size: 48,
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Talk with Kee',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                            color: theme.colorScheme.onSurface,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: accentColor.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            ref.watch(voiceAssistantProvider).isHandsFreeEnabled ? '"Hi Kee"' : 'Voice-First',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              color: accentColor,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      ref.watch(voiceAssistantProvider).isListening
+                                          ? 'Listening... speak naturally'
+                                          : 'Say "Hi Kee" or tap to start a real-time conversation',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(Icons.arrow_forward_ios_rounded, size: 14, color: accentColor),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Divider(height: 1, color: theme.colorScheme.outline.withValues(alpha: 0.3)),
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.md,
@@ -171,14 +246,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               child: TextField(
                                 controller: _quickInputController,
                                 decoration: InputDecoration(
-                                  hintText: 'Talk to Kee or ask a question...',
+                                  hintText: 'Or type silently to Kee...',
                                   hintStyle: TextStyle(
                                     color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                                    fontSize: 14,
+                                    fontSize: 13,
                                   ),
                                   border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
+                                  isDense: true,
                                 ),
                                 onSubmitted: (val) {
                                   if (val.trim().isNotEmpty) {
@@ -188,46 +262,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.mic_none_rounded),
-                              tooltip: 'Voice Input',
-                              onPressed: () async {
-                                await VoiceCaptureDialog.show(context);
+                              icon: const Icon(Icons.send_rounded, size: 18),
+                              tooltip: 'Send',
+                              color: accentColor,
+                              onPressed: () {
+                                if (_quickInputController.text.trim().isNotEmpty) {
+                                  context.go('/ask-kee');
+                                }
                               },
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.arrow_forward_rounded),
-                              tooltip: 'Open Ask Kee',
-                              onPressed: () => context.go('/ask-kee'),
-                            ),
                           ],
-                        ),
-                      ),
-                      Divider(height: 1, color: theme.colorScheme.outline.withValues(alpha: 0.3)),
-                      InkWell(
-                        onTap: () => context.go('/ask-kee'),
-                        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(AppSpacing.radiusLg)),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(Icons.chat_bubble_outline_rounded, size: 14, color: accentColor),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Open full conversation with Kee',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: accentColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Icon(Icons.chevron_right_rounded, size: 16, color: accentColor),
-                            ],
-                          ),
                         ),
                       ),
                     ],
@@ -297,11 +341,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         );
                       },
                       loading: () => const SizedBox.shrink(),
-                      error: (_, __) => const SizedBox.shrink(),
+                      error: (_, _) => const SizedBox.shrink(),
                     );
                   },
                   loading: () => const SizedBox.shrink(),
-                  error: (_, __) => const SizedBox.shrink(),
+                  error: (_, _) => const SizedBox.shrink(),
                 ),
 
                 const SizedBox(height: AppSpacing.xxl),

@@ -1,15 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../voice/voice_assistant_controller.dart';
+import '../widgets/kee_floating_assistant.dart';
 
-class NavShell extends StatelessWidget {
+class NavShell extends ConsumerWidget {
   final StatefulNavigationShell navigationShell;
 
   const NavShell({super.key, required this.navigationShell});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final assistant = ref.watch(voiceAssistantProvider);
+
     return Scaffold(
-      body: navigationShell,
+      body: Stack(
+        children: [
+          navigationShell,
+
+          // Global floating assistant orb (shown outside Ask Kee screen, or whenever expanded)
+          if (assistant.isExpanded || navigationShell.currentIndex != 1)
+            const KeeFloatingAssistant(),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: navigationShell.currentIndex,
         onDestinationSelected: (index) {
@@ -25,8 +38,8 @@ class NavShell extends StatelessWidget {
             label: 'Home',
           ),
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline_rounded),
-            selectedIcon: Icon(Icons.chat_bubble_rounded),
+            icon: Icon(Icons.mic_none_rounded),
+            selectedIcon: Icon(Icons.mic_rounded),
             label: 'Ask Kee',
           ),
           NavigationDestination(

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/voice/voice_assistant_controller.dart';
+import '../../../core/voice/wake_word_service.dart';
 import '../../../core/widgets/kee_logo.dart';
 import '../../../core/widgets/kee_onboarding_sheet.dart';
 import '../../../core/theme/theme_provider.dart';
@@ -22,6 +24,11 @@ class SettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final themeMode = ref.watch(themeModeProvider);
     final aiEngine = ref.watch(aiEngineProvider);
+    final assistant = ref.watch(voiceAssistantProvider);
+    final voiceCtrl = ref.read(voiceAssistantProvider.notifier);
+    final wakeWord = ref.watch(wakeWordServiceProvider);
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = isDark ? const Color(0xFFE8D0B2) : const Color(0xFFA6855B);
 
     return Scaffold(
       appBar: AppBar(
@@ -33,6 +40,159 @@ class SettingsScreen extends ConsumerWidget {
           vertical: AppSpacing.sm,
         ),
         children: [
+          // Section: Voice-First AI Assistant & Wake Word
+          _buildSectionTitle(theme, 'Voice & Assistant'),
+          Card(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  secondary: Icon(
+                    assistant.isHandsFreeEnabled ? Icons.mic_rounded : Icons.mic_off_rounded,
+                    color: assistant.isHandsFreeEnabled ? accentColor : null,
+                  ),
+                  title: const Text('Wake Word ("Hi Kee")'),
+                  subtitle: const Text('Wake up Kee hands-free by saying "Hi Kee" or "Hey Kee"'),
+                  value: assistant.isHandsFreeEnabled,
+                  onChanged: (val) {
+                    voiceCtrl.toggleHandsFree(val);
+                  },
+                ),
+                if (assistant.isHandsFreeEnabled) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Listening Mode',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _buildListeningModeOption(
+                          context: context,
+                          title: 'In-App Only (Recommended)',
+                          subtitle: 'Listens for "Hi Kee" while the app is active. Highly battery-efficient.',
+                          isSelected: wakeWord.listeningMode == WakeWordListeningMode.inAppOnly,
+                          accentColor: accentColor,
+                          isDark: isDark,
+                          onTap: () {
+                            wakeWord.setListeningMode(WakeWordListeningMode.inAppOnly);
+                            (context as Element).markNeedsBuild();
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        _buildListeningModeOption(
+                          context: context,
+                          title: 'Background Service',
+                          subtitle: 'Keeps listening service running with a foreground notification. Subject to Android OS battery restrictions and OS termination.',
+                          isSelected: wakeWord.listeningMode == WakeWordListeningMode.foregroundService,
+                          accentColor: accentColor,
+                          isDark: isDark,
+                          onTap: () {
+                            wakeWord.setListeningMode(WakeWordListeningMode.foregroundService);
+                            (context as Element).markNeedsBuild();
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.black26 : const Color(0xFFF3ECE1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: accentColor.withValues(alpha: 0.25)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.info_outline_rounded, size: 16, color: accentColor),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Android Background Note: Android restricts continuous mic capture if battery optimization is enabled or if the app is force-stopped. For 100% reliability, in-app wake or tapping the floating orb is always available.',
+                                  style: TextStyle(fontSize: 11, height: 1.35, color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.speed_rounded),
+                  title: const Text('Voice Speech Speed'),
+                  subtitle: Slider(
+                    value: assistant.speechRate,
+                    min: 0.2,
+                    max: 0.9,
+                    divisions: 7,
+                    label: '${(assistant.speechRate * 2).toStringAsFixed(1)}x',
+                    onChanged: (val) {
+                      voiceCtrl.setSpeechRate(val);
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.graphic_eq_rounded),
+                  title: const Text('Voice Pitch'),
+                  subtitle: Slider(
+                    value: assistant.speechPitch,
+                    min: 0.7,
+                    max: 1.4,
+                    divisions: 7,
+                    label: '${assistant.speechPitch.toStringAsFixed(1)}x',
+                    onChanged: (val) {
+                      voiceCtrl.setSpeechPitch(val);
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.record_voice_over_rounded),
+                  title: const Text('Test Voice Output'),
+                  subtitle: const Text('Preview how Kee sounds with your current settings'),
+                  trailing: ElevatedButton.icon(
+                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                    label: const Text('Play'),
+                    onPressed: () {
+                      voiceCtrl.testVoiceOutput();
+                    },
+                  ),
+                ),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.security_rounded, size: 16, color: Color(0xFF81C784)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '100% On-Device Voice Privacy: Speech detection and wake word recognition run locally on your device. Audio recordings are never uploaded or stored.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: theme.colorScheme.onSurfaceVariant,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+
           // Section: Appearance
           _buildSectionTitle(theme, 'Appearance'),
           Card(
@@ -442,6 +602,65 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildListeningModeOption({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required bool isSelected,
+    required Color accentColor,
+    required bool isDark,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? accentColor.withValues(alpha: 0.12)
+              : (isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.02)),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected
+                ? accentColor
+                : (isDark ? Colors.white12 : Colors.black12),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+              color: isSelected ? accentColor : Colors.grey,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      color: isSelected ? accentColor : null,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 12, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

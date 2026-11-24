@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:kee/core/constants/app_spacing.dart';
-import 'package:kee/core/intelligence/conversation_provider.dart';
-import 'package:kee/core/intelligence/kee_conversation_engine.dart';
-import 'package:kee/core/widgets/kee_logo.dart';
-import 'package:kee/features/capture/presentation/voice_capture_dialog.dart';
-import 'package:kee/features/memories/data/memory_model.dart';
-import 'package:kee/features/reminders/data/reminder_model.dart';
-import 'package:kee/features/reminders/data/task_model.dart';
+import '../../../core/constants/app_spacing.dart';
+import '../../../core/intelligence/conversation_provider.dart';
+import '../../../core/intelligence/kee_conversation_engine.dart';
+import '../../../core/voice/assistant_state.dart';
+import '../../../core/voice/voice_assistant_controller.dart';
+import '../../../core/widgets/kee_logo.dart';
+import '../../../core/widgets/kee_voice_orb.dart';
+import '../../memories/data/memory_model.dart';
+import '../../reminders/data/reminder_model.dart';
+import '../../reminders/data/task_model.dart';
 
 class ChatMessage {
   final String text;
@@ -49,13 +51,14 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
-  bool _isProcessing = false;
+  bool _isProcessingText = false;
+  bool _showTextInput = false;
 
   final List<String> _suggestedPrompts = [
     'What do I have scheduled tomorrow?',
-    'Remind me to review notes tomorrow at 10 AM',
+    'Remind me to call John tomorrow at 9 AM',
+    'Remember that my mum\'s birthday is February 14',
     'I prefer working in quiet environments',
-    'My mum\'s birthday is February 14',
     'What did I say I wanted to buy?',
     'Which tasks are pending?',
   ];
@@ -65,7 +68,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
     super.initState();
     _messages.add(
       ChatMessage(
-        text: 'Meet Kee, your Knowledge Extension Entity. Talk naturally to capture what matters, set reminders, or recall anything you have entrusted to memory.\n\nYour memory. Extended.',
+        text: 'Meet Kee, your Voice-First Knowledge Extension Entity. Say "Hi Kee" or tap the orb to speak naturally.\n\nYour memory. Extended.',
         isUser: false,
         timestamp: DateTime.now(),
       ),
@@ -87,14 +90,14 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
 
   Future<void> _handleSendMessage(String query) async {
     final text = query.trim();
-    if (text.isEmpty || _isProcessing) return;
+    if (text.isEmpty || _isProcessingText) return;
 
     _controller.clear();
     setState(() {
       _messages.add(
         ChatMessage(text: text, isUser: true, timestamp: DateTime.now()),
       );
-      _isProcessing = true;
+      _isProcessingText = true;
     });
 
     _scrollToBottom();
@@ -120,7 +123,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
             citedTasks: action.citedTasks,
           ),
         );
-        _isProcessing = false;
+        _isProcessingText = false;
       });
 
       _scrollToBottom();
@@ -134,7 +137,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
             timestamp: DateTime.now(),
           ),
         );
-        _isProcessing = false;
+        _isProcessingText = false;
       });
       _scrollToBottom();
     }
@@ -156,10 +159,32 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final assistant = ref.watch(voiceAssistantProvider);
+    final voiceCtrl = ref.read(voiceAssistantProvider.notifier);
 
     final accentColor = isDark
         ? const Color(0xFFE8D0B2)
         : const Color(0xFFA6855B);
+
+    // Listen for spoken turn completion to log spoken turns in transcript
+    ref.listen(voiceAssistantProvider, (prev, next) {
+      if (prev?.state == AssistantState.processing && next.state == AssistantState.speaking) {
+        // Log spoken turn into transcript
+        if (next.liveTranscript.isNotEmpty) {
+          setState(() {
+            _messages.add(
+              ChatMessage(text: next.liveTranscript, isUser: true, timestamp: DateTime.now()),
+            );
+            if (next.lastAssistantResponse.isNotEmpty) {
+              _messages.add(
+                ChatMessage(text: next.lastAssistantResponse, isUser: false, timestamp: DateTime.now()),
+              );
+            }
+          });
+          _scrollToBottom();
+        }
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -181,7 +206,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                   ),
                 ),
                 Text(
-                  'Knowledge Extension Entity',
+                  assistant.isHandsFreeEnabled ? 'Hands-Free Active ("Hi Kee")' : 'Voice-First AI Assistant',
                   style: TextStyle(
                     fontSize: 10,
                     letterSpacing: 0.5,
@@ -194,6 +219,16 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
         ),
         actions: [
           IconButton(
+            icon: Icon(
+              assistant.isHandsFreeEnabled ? Icons.hearing_rounded : Icons.hearing_disabled_rounded,
+              color: assistant.isHandsFreeEnabled ? accentColor : theme.colorScheme.onSurfaceVariant,
+            ),
+            tooltip: assistant.isHandsFreeEnabled ? 'Wake Word Active ("Hi Kee")' : 'Hands-Free Disabled',
+            onPressed: () {
+              voiceCtrl.toggleHandsFree(!assistant.isHandsFreeEnabled);
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Clear conversation',
             onPressed: () {
@@ -201,7 +236,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                 _messages.clear();
                 _messages.add(
                   ChatMessage(
-                    text: 'Conversation cleared. What would you like to remember or ask today?',
+                    text: 'Conversation cleared. Say "Hi Kee" or tap the orb to begin.',
                     isUser: false,
                     timestamp: DateTime.now(),
                   ),
@@ -215,13 +250,127 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Message List
+            // ─── 1. Primary Voice Hero Section ───────────────────
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF13110E) : const Color(0xFFFBF8F4),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: assistant.isListening
+                      ? accentColor
+                      : (isDark ? const Color(0xFF262018) : const Color(0xFFEADBCE)),
+                  width: assistant.isListening ? 1.5 : 1.0,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: assistant.isListening
+                                  ? const Color(0xFF81C784)
+                                  : assistant.isSpeaking
+                                      ? accentColor
+                                      : Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _getVoiceStatusText(assistant.state),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: accentColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (assistant.isSpeaking)
+                        InkWell(
+                          onTap: () => voiceCtrl.interrupt(),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: accentColor.withValues(alpha: 0.4)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.pan_tool_outlined, size: 12, color: accentColor),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Tap to Interrupt',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: accentColor),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // The Interactive Voice Orb
+                  Center(
+                    child: KeeVoiceOrb(
+                      state: assistant.state,
+                      soundLevel: assistant.soundLevel,
+                      size: 64,
+                      onTap: () {
+                        if (assistant.isSpeaking) {
+                          voiceCtrl.interrupt();
+                        } else if (assistant.isListening) {
+                          voiceCtrl.dismissSession();
+                        } else {
+                          voiceCtrl.startListening();
+                        }
+                      },
+                    ),
+                  ),
+
+                  // Real-time spoken transcript banner
+                  if (assistant.liveTranscript.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.black26 : Colors.white60,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '"${assistant.liveTranscript}"',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontStyle: FontStyle.italic,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // ─── 2. Scrollable Message Transcript ─────────────────
             Expanded(
               child: ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.md,
-                  vertical: AppSpacing.md,
+                  vertical: AppSpacing.sm,
                 ),
                 itemCount: _messages.length,
                 itemBuilder: (context, index) {
@@ -231,8 +380,8 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
               ),
             ),
 
-            // Loading indicator
-            if (_isProcessing)
+            // Loading indicator for typed messages
+            if (_isProcessingText)
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                 child: Row(
@@ -260,14 +409,14 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
               ),
 
             // Suggested prompt chips
-            if (_messages.length <= 3 && !_isProcessing)
+            if (_messages.length <= 3 && !_isProcessingText && !assistant.isListening)
               SizedBox(
                 height: 38,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                   itemCount: _suggestedPrompts.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: AppSpacing.xs),
+                  separatorBuilder: (_, _) => const SizedBox(width: AppSpacing.xs),
                   itemBuilder: (context, index) {
                     final prompt = _suggestedPrompts[index];
                     return ActionChip(
@@ -283,7 +432,9 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
                       ),
-                      onPressed: () => _handleSendMessage(prompt),
+                      onPressed: () {
+                        voiceCtrl.processSpokenInput(prompt);
+                      },
                     );
                   },
                 ),
@@ -291,81 +442,165 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
 
             const SizedBox(height: AppSpacing.xs),
 
-            // Input Bar
-            Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
-                        border: Border.all(
-                          color: theme.colorScheme.outline.withValues(alpha: 0.6),
+            // ─── 3. Bottom Controls: Voice Bar & Secondary Text Field ──
+            if (_showTextInput)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surface,
+                          borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
+                          border: Border.all(
+                            color: theme.colorScheme.outline.withValues(alpha: 0.6),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: TextField(
+                                controller: _controller,
+                                textCapitalization: TextCapitalization.sentences,
+                                minLines: 1,
+                                maxLines: 4,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: theme.colorScheme.onSurface,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: 'Type silently to Kee...',
+                                  hintStyle: TextStyle(
+                                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                                    fontSize: 14,
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                                onSubmitted: (val) => _handleSendMessage(val),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 20),
+                              tooltip: 'Hide keyboard',
+                              onPressed: () => setState(() => _showTextInput = false),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: TextField(
-                              controller: _controller,
-                              textCapitalization: TextCapitalization.sentences,
-                              minLines: 1,
-                              maxLines: 4,
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.arrow_upward_rounded,
+                          color: theme.colorScheme.onPrimary,
+                          size: 20,
+                        ),
+                        onPressed: () => _handleSendMessage(_controller.text),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Text Input Toggle Button
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_alt_outlined),
+                      tooltip: 'Type instead of speaking',
+                      color: theme.colorScheme.onSurfaceVariant,
+                      onPressed: () => setState(() => _showTextInput = true),
+                    ),
+
+                    // Primary Voice Mic Button
+                    InkWell(
+                      borderRadius: BorderRadius.circular(32),
+                      onTap: () {
+                        if (assistant.isListening) {
+                          voiceCtrl.dismissSession();
+                        } else if (assistant.isSpeaking) {
+                          voiceCtrl.interrupt();
+                        } else {
+                          voiceCtrl.startListening();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: assistant.isListening ? accentColor : (isDark ? const Color(0xFF24201A) : const Color(0xFFEDE4D8)),
+                          borderRadius: BorderRadius.circular(32),
+                          border: Border.all(color: accentColor.withValues(alpha: 0.5)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              assistant.isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                              color: assistant.isListening ? (isDark ? Colors.black : Colors.white) : accentColor,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              assistant.isListening
+                                  ? 'Listening...'
+                                  : assistant.isSpeaking
+                                      ? 'Interrupt'
+                                      : 'Tap to Speak',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: theme.colorScheme.onSurface,
+                                fontWeight: FontWeight.w600,
+                                color: assistant.isListening ? (isDark ? Colors.black : Colors.white) : theme.colorScheme.onSurface,
                               ),
-                              decoration: InputDecoration(
-                                hintText: 'Talk to Kee or ask a question...',
-                                hintStyle: TextStyle(
-                                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                                  fontSize: 14,
-                                ),
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                              onSubmitted: (val) => _handleSendMessage(val),
                             ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.mic_none_rounded, size: 22),
-                            tooltip: 'Voice Input',
-                            color: theme.colorScheme.onSurfaceVariant,
-                            onPressed: () async {
-                              await VoiceCaptureDialog.show(context);
-                            },
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: AppSpacing.sm),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
+
+                    // Hands-Free Wake Word indicator
+                    IconButton(
                       icon: Icon(
-                        Icons.arrow_upward_rounded,
-                        color: theme.colorScheme.onPrimary,
-                        size: 20,
+                        Icons.voice_chat_rounded,
+                        color: assistant.isHandsFreeEnabled ? accentColor : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                       ),
-                      onPressed: () => _handleSendMessage(_controller.text),
+                      tooltip: assistant.isHandsFreeEnabled ? 'Hands-Free: Say "Hi Kee"' : 'Tap to toggle hands-free',
+                      onPressed: () => voiceCtrl.toggleHandsFree(!assistant.isHandsFreeEnabled),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
           ],
         ),
       ),
     );
+  }
+
+  String _getVoiceStatusText(AssistantState state) {
+    switch (state) {
+      case AssistantState.listening:
+        return 'Listening... speak naturally';
+      case AssistantState.processing:
+        return 'Kee is understanding...';
+      case AssistantState.speaking:
+        return 'Kee is responding...';
+      case AssistantState.interrupted:
+        return 'Interrupted—listening...';
+      case AssistantState.error:
+        return 'Voice connection issue';
+      case AssistantState.idle:
+        return 'Ready. Say "Hi Kee" or tap to speak';
+    }
   }
 
   Widget _buildMessageBubble(BuildContext context, ChatMessage msg) {
