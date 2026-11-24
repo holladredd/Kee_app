@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../sync/background_walker_pipeline.dart';
 import '../widgets/kee_floating_assistant.dart';
 
 /// Central navigation shell for authenticated pages.
@@ -18,6 +19,9 @@ class NavShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Keep background walker pipeline active across all authenticated screens
+    ref.watch(backgroundWalkerProvider);
+
     // Hide chat widget on the dedicated chat page
     final isChatPage = currentPath == '/ask-kee';
 

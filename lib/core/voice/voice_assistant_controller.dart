@@ -263,11 +263,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
 
       await _tts.speak(reply);
     } catch (e) {
-      state = state.copyWith(
-        state: AssistantState.error,
-        errorMessage: 'Intelligence processing error: $e',
-      );
-      _wakeWord.setAssistantActive(false);
+      _handleError('Could not process request: $e');
     }
   }
 

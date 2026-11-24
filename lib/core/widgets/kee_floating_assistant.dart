@@ -135,7 +135,7 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
       case AssistantState.interrupted:
         return 'Interrupted';
       case AssistantState.error:
-        return 'Voice Error';
+        return 'Voice Notice';
       case AssistantState.idle:
         return 'Ask Kee';
     }
@@ -337,6 +337,7 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
                         } else if (assistant.isSpeaking) {
                           controller.interrupt();
                         } else {
+                          controller.clearError();
                           controller.startListening();
                         }
                       },
@@ -344,17 +345,25 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: assistant.isListening ? accentColor : (isDark ? Colors.white12 : Colors.black12),
+                          color: assistant.isListening
+                              ? accentColor
+                              : assistant.hasError
+                                  ? Colors.redAccent.withValues(alpha: 0.2)
+                                  : (isDark ? Colors.white12 : Colors.black12),
                         ),
                         child: Icon(
                           assistant.isListening
                               ? Icons.mic_rounded
                               : assistant.isSpeaking
                                   ? Icons.stop_rounded
-                                  : Icons.mic_none_rounded,
+                                  : assistant.hasError
+                                      ? Icons.refresh_rounded
+                                      : Icons.mic_none_rounded,
                           color: assistant.isListening
                               ? (isDark ? Colors.black : Colors.white)
-                              : theme.colorScheme.onSurface,
+                              : assistant.hasError
+                                  ? Colors.redAccent
+                                  : theme.colorScheme.onSurface,
                           size: 28,
                         ),
                       ),
