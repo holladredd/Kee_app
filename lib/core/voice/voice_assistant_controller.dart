@@ -32,6 +32,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
 
   Timer? _silenceTimer;
   Timer? _continuousTurnTimer;
+  Timer? _errorRecoveryTimer;
 
   @override
   VoiceAssistantState build() {
@@ -50,9 +51,40 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
       handleWakeWordActivation(trailingQuery);
     };
 
+    // Initialize Speech Error Handling
+    if (_speech is SpeechToTextService) {
+      final speechService = _speech as SpeechToTextService;
+      speechService.onError = (err) {
+        final lower = err.toLowerCase();
+        if (lower.contains('no-speech') || lower.contains('aborted')) {
+          // If silence detected, gracefully return to idle rather than showing a red error
+          if (state.isListening && state.liveTranscript.isEmpty) {
+            state = state.copyWith(
+              state: AssistantState.idle,
+              soundLevel: 0.0,
+            );
+          }
+          return;
+        }
+
+        String friendlyMessage;
+        if (lower.contains('network')) {
+          friendlyMessage = kIsWeb
+              ? 'Web speech requires cloud STT access. Please verify your connection or type below.'
+              : 'Voice recognition network error. Please check your connection.';
+        } else if (lower.contains('not-allowed') || lower.contains('permission')) {
+          friendlyMessage = 'Microphone permission denied. Allow mic access in your browser or device settings.';
+        } else {
+          friendlyMessage = 'Speech recognition notice: $err';
+        }
+
+        _handleError(friendlyMessage);
+      };
+    }
+
     // Initialize TTS
     if (_tts is FlutterTtsService) {
-      final flutterTts = _tts;
+      final flutterTts = _tts as FlutterTtsService;
       flutterTts.onCompletion = () {
         _onTtsCompleted();
       };
@@ -60,12 +92,41 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
         debugPrint('[VoiceAssistantController] TTS cancelled/interrupted');
       };
       flutterTts.onError = (err) {
-        state = state.copyWith(
-          state: AssistantState.error,
-          errorMessage: 'Speech output error: $err',
-        );
+        _handleError('Speech output notice: $err');
       };
     }
+  }
+
+  void _handleError(String message) {
+    _silenceTimer?.cancel();
+    _continuousTurnTimer?.cancel();
+    _errorRecoveryTimer?.cancel();
+
+    state = state.copyWith(
+      state: AssistantState.error,
+      errorMessage: message,
+      soundLevel: 0.0,
+    );
+    _wakeWord.setAssistantActive(false);
+
+    // Auto-recover after 4 seconds so the assistant UI is never permanently blocked
+    _errorRecoveryTimer = Timer(const Duration(seconds: 4), () {
+      if (state.state == AssistantState.error) {
+        state = state.copyWith(
+          state: AssistantState.idle,
+          errorMessage: null,
+        );
+      }
+    });
+  }
+
+  void clearError() {
+    _errorRecoveryTimer?.cancel();
+    state = state.copyWith(
+      state: AssistantState.idle,
+      errorMessage: null,
+      soundLevel: 0.0,
+    );
   }
 
   /// Triggered when the wake word "Hi Kee" is recognized locally on-device
@@ -124,11 +185,15 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
         },
       );
     } catch (e) {
-      state = state.copyWith(
-        state: AssistantState.error,
-        errorMessage: 'Microphone input error: $e',
-      );
-      _wakeWord.setAssistantActive(false);
+      String msg = e.toString();
+      if (msg.contains('InvalidStateError') || msg.contains('already started')) {
+        msg = 'Microphone was resetting. Please tap again.';
+      } else if (msg.contains('not initialized') || msg.contains('permission')) {
+        msg = kIsWeb
+            ? 'Please allow microphone access in your browser.'
+            : 'Microphone permission required.';
+      }
+      _handleError(msg);
     }
   }
 
@@ -232,6 +297,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   Future<void> dismissSession() async {
     _silenceTimer?.cancel();
     _continuousTurnTimer?.cancel();
+    _errorRecoveryTimer?.cancel();
 
     await _speech.stopListening();
     await _tts.stop();

@@ -120,6 +120,12 @@ class SpeechToTextService implements ISpeechRecognitionService {
         onError: (SpeechRecognitionError error) {
           _isListening = false;
           onListeningStopped?.call();
+          final msg = error.errorMsg.toLowerCase();
+          // Filter out benign browser events (e.g. silence or intentional aborts)
+          if (msg.contains('no-speech') || msg.contains('aborted')) {
+            debugPrint('[SpeechToTextService] Non-fatal speech event: ${error.errorMsg}');
+            return;
+          }
           onError?.call(error.errorMsg);
           debugPrint('[SpeechToTextService] Error: ${error.errorMsg} (permanent: ${error.permanent})');
         },
@@ -151,6 +157,9 @@ class SpeechToTextService implements ISpeechRecognitionService {
 
     if (_speech.isListening) {
       await stopListening();
+      if (kIsWeb) {
+        await Future.delayed(const Duration(milliseconds: 150));
+      }
     }
 
     try {
@@ -179,6 +188,14 @@ class SpeechToTextService implements ISpeechRecognitionService {
     } catch (e) {
       _isListening = false;
       debugPrint('[SpeechToTextService] Listen error: $e');
+      final errStr = e.toString();
+      if (errStr.contains('InvalidStateError') || errStr.contains('already started')) {
+        try {
+          await _speech.cancel();
+          await Future.delayed(const Duration(milliseconds: 200));
+          return;
+        } catch (_) {}
+      }
       rethrow;
     }
   }

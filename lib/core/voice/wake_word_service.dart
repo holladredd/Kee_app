@@ -68,6 +68,15 @@ class WakeWordService {
   Future<void> startWakeWordMonitoring() async {
     if (!_isEnabled || _isAssistantActive || _isListeningForWakeWord) return;
 
+    // Web browsers do not support continuous background microphone listening
+    // and only permit a single SpeechRecognition instance at a time.
+    // We disable background wake-word polling on web to prevent InvalidStateError
+    // collisions with the active voice assistant.
+    if (kIsWeb) {
+      debugPrint('[WakeWordService] Background wake-word monitoring is disabled on web.');
+      return;
+    }
+
     try {
       final hasPermission = await _speechService.initialize();
       if (!hasPermission) {

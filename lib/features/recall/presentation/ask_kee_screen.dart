@@ -202,11 +202,11 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            _getVoiceStatusText(assistant.state),
+                            _getVoiceStatusText(assistant),
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: accentColor,
+                              color: assistant.hasError ? Colors.redAccent : accentColor,
                             ),
                           ),
                         ],
@@ -455,22 +455,39 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                         } else if (assistant.isSpeaking) {
                           safeVoiceCtrl.interrupt();
                         } else {
+                          safeVoiceCtrl.clearError();
                           safeVoiceCtrl.startListening();
                         }
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                         decoration: BoxDecoration(
-                          color: assistant.isListening ? accentColor : (isDark ? const Color(0xFF24201A) : const Color(0xFFEDE4D8)),
+                          color: assistant.isListening
+                              ? accentColor
+                              : assistant.hasError
+                                  ? Colors.redAccent.withValues(alpha: 0.15)
+                                  : (isDark ? const Color(0xFF24201A) : const Color(0xFFEDE4D8)),
                           borderRadius: BorderRadius.circular(32),
-                          border: Border.all(color: accentColor.withValues(alpha: 0.5)),
+                          border: Border.all(
+                            color: assistant.hasError
+                                ? Colors.redAccent.withValues(alpha: 0.5)
+                                : accentColor.withValues(alpha: 0.5),
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              assistant.isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                              color: assistant.isListening ? (isDark ? Colors.black : Colors.white) : accentColor,
+                              assistant.isListening
+                                  ? Icons.mic_rounded
+                                  : assistant.hasError
+                                      ? Icons.refresh_rounded
+                                      : Icons.mic_none_rounded,
+                              color: assistant.isListening
+                                  ? (isDark ? Colors.black : Colors.white)
+                                  : assistant.hasError
+                                      ? Colors.redAccent
+                                      : accentColor,
                               size: 22,
                             ),
                             const SizedBox(width: 8),
@@ -479,11 +496,17 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                                   ? 'Listening...'
                                   : assistant.isSpeaking
                                       ? 'Interrupt'
-                                      : 'Tap to Speak',
+                                      : assistant.hasError
+                                          ? 'Retry Voice'
+                                          : 'Tap to Speak',
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: assistant.isListening ? (isDark ? Colors.black : Colors.white) : theme.colorScheme.onSurface,
+                                color: assistant.isListening
+                                    ? (isDark ? Colors.black : Colors.white)
+                                    : assistant.hasError
+                                        ? Colors.redAccent
+                                        : theme.colorScheme.onSurface,
                               ),
                             ),
                           ],
@@ -513,8 +536,8 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
     );
   }
 
-  String _getVoiceStatusText(AssistantState state) {
-    switch (state) {
+  String _getVoiceStatusText(VoiceAssistantState assistant) {
+    switch (assistant.state) {
       case AssistantState.listening:
         return 'Listening... speak naturally';
       case AssistantState.processing:
@@ -524,7 +547,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
       case AssistantState.interrupted:
         return 'Interrupted—listening...';
       case AssistantState.error:
-        return 'Voice connection issue';
+        return assistant.errorMessage ?? 'Voice notice (tap to retry)';
       case AssistantState.idle:
         return 'Ready. Say "Hi Kee" or tap to speak';
     }
