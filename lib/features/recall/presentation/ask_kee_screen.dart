@@ -1,42 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_spacing.dart';
-import '../../../core/intelligence/conversation_provider.dart';
-import '../../../core/intelligence/kee_conversation_engine.dart';
+import '../../../core/intelligence/unified_chat_provider.dart';
 import '../../../core/voice/assistant_state.dart';
 import '../../../core/voice/voice_assistant_controller.dart';
 import '../../../core/widgets/kee_logo.dart';
 import '../../../core/widgets/kee_voice_orb.dart';
-import '../../memories/data/memory_model.dart';
-import '../../reminders/data/reminder_model.dart';
-import '../../reminders/data/task_model.dart';
-
-class ChatMessage {
-  final String text;
-  final bool isUser;
-  final DateTime timestamp;
-  final MessageIntent? intent;
-  final MemoryModel? savedMemory;
-  final ReminderModel? scheduledReminder;
-  final TaskModel? savedTask;
-  final List<MemoryModel> citations;
-  final List<ReminderModel> citedReminders;
-  final List<TaskModel> citedTasks;
-
-  ChatMessage({
-    required this.text,
-    required this.isUser,
-    required this.timestamp,
-    this.intent,
-    this.savedMemory,
-    this.scheduledReminder,
-    this.savedTask,
-    this.citations = const [],
-    this.citedReminders = const [],
-    this.citedTasks = const [],
-  });
-}
 
 class AskKeeScreen extends ConsumerStatefulWidget {
   final String? initialQuery;
@@ -50,7 +21,6 @@ class AskKeeScreen extends ConsumerStatefulWidget {
 class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final List<ChatMessage> _messages = [];
   bool _isProcessingText = false;
   bool _showTextInput = false;
 
@@ -66,14 +36,6 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
   @override
   void initState() {
     super.initState();
-    _messages.add(
-      ChatMessage(
-        text: 'Meet Kee, your Voice-First Knowledge Extension Entity. Say "Hi Kee" or tap the orb to speak naturally.\n\nYour memory. Extended.',
-        isUser: false,
-        timestamp: DateTime.now(),
-      ),
-    );
-
     if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _handleSendMessage(widget.initialQuery!);
@@ -93,53 +55,18 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
     if (text.isEmpty || _isProcessingText) return;
 
     _controller.clear();
-    setState(() {
-      _messages.add(
-        ChatMessage(text: text, isUser: true, timestamp: DateTime.now()),
-      );
-      _isProcessingText = true;
-    });
-
+    setState(() => _isProcessingText = true);
     _scrollToBottom();
 
     try {
-      final engine = ref.read(conversationEngineProvider);
-      final ConversationAction action = await engine.processMessage(text);
-
-      if (!mounted) return;
-
-      setState(() {
-        _messages.add(
-          ChatMessage(
-            text: action.responseText,
-            isUser: false,
-            timestamp: DateTime.now(),
-            intent: action.intent,
-            savedMemory: action.savedMemory,
-            scheduledReminder: action.scheduledReminder,
-            savedTask: action.savedTask,
-            citations: action.citedMemories,
-            citedReminders: action.citedReminders,
-            citedTasks: action.citedTasks,
-          ),
-        );
-        _isProcessingText = false;
-      });
-
-      _scrollToBottom();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _messages.add(
-          ChatMessage(
-            text: "I encountered an issue processing that. Your local memory is intact—please try again.",
-            isUser: false,
-            timestamp: DateTime.now(),
-          ),
-        );
-        _isProcessingText = false;
-      });
-      _scrollToBottom();
+      await ref.read(unifiedChatProvider.notifier).sendMessage(text);
+    } catch (_) {
+      // Error is caught and safely appended into unified chat
+    } finally {
+      if (mounted) {
+        setState(() => _isProcessingText = false);
+        _scrollToBottom();
+      }
     }
   }
 
@@ -159,40 +86,38 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final assistant = ref.watch(voiceAssistantProvider);
-    final voiceCtrl = ref.read(voiceAssistantProvider.notifier);
+    final messages = ref.watch(unifiedChatProvider);
+
+    // Safely read voice state
+    VoiceAssistantState assistant = const VoiceAssistantState();
+    VoiceAssistantController? voiceCtrl;
+    try {
+      assistant = ref.watch(voiceAssistantProvider);
+      voiceCtrl = ref.read(voiceAssistantProvider.notifier);
+    } catch (_) {}
+    final safeVoiceCtrl = voiceCtrl;
 
     final accentColor = isDark
         ? const Color(0xFFE8D0B2)
         : const Color(0xFFA6855B);
 
-    // Listen for spoken turn completion to log spoken turns in transcript
-    ref.listen(voiceAssistantProvider, (prev, next) {
-      if (prev?.state == AssistantState.processing && next.state == AssistantState.speaking) {
-        // Log spoken turn into transcript
-        if (next.liveTranscript.isNotEmpty) {
-          setState(() {
-            _messages.add(
-              ChatMessage(text: next.liveTranscript, isUser: true, timestamp: DateTime.now()),
-            );
-            if (next.lastAssistantResponse.isNotEmpty) {
-              _messages.add(
-                ChatMessage(text: next.lastAssistantResponse, isUser: false, timestamp: DateTime.now()),
-              );
-            }
-          });
-          _scrollToBottom();
-        }
-      }
-    });
-
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          tooltip: 'Back to Home',
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/home');
+            }
+          },
+        ),
         titleSpacing: 0,
         title: Row(
           children: [
-            const SizedBox(width: AppSpacing.sm),
-            const KeeLogo(size: 32),
+            const KeeLogo(size: 30),
             const SizedBox(width: AppSpacing.sm),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,7 +131,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                   ),
                 ),
                 Text(
-                  assistant.isHandsFreeEnabled ? 'Hands-Free Active ("Hi Kee")' : 'Voice-First AI Assistant',
+                  assistant.isHandsFreeEnabled ? 'Hands-Free Active ("Hi Kee")' : 'Your Memory. Extended.',
                   style: TextStyle(
                     fontSize: 10,
                     letterSpacing: 0.5,
@@ -218,30 +143,22 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: Icon(
-              assistant.isHandsFreeEnabled ? Icons.hearing_rounded : Icons.hearing_disabled_rounded,
-              color: assistant.isHandsFreeEnabled ? accentColor : theme.colorScheme.onSurfaceVariant,
+          if (safeVoiceCtrl != null)
+            IconButton(
+              icon: Icon(
+                assistant.isHandsFreeEnabled ? Icons.hearing_rounded : Icons.hearing_disabled_rounded,
+                color: assistant.isHandsFreeEnabled ? accentColor : theme.colorScheme.onSurfaceVariant,
+              ),
+              tooltip: assistant.isHandsFreeEnabled ? 'Wake Word Active ("Hi Kee")' : 'Hands-Free Disabled',
+              onPressed: () {
+                safeVoiceCtrl.toggleHandsFree(!assistant.isHandsFreeEnabled);
+              },
             ),
-            tooltip: assistant.isHandsFreeEnabled ? 'Wake Word Active ("Hi Kee")' : 'Hands-Free Disabled',
-            onPressed: () {
-              voiceCtrl.toggleHandsFree(!assistant.isHandsFreeEnabled);
-            },
-          ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Clear conversation',
             onPressed: () {
-              setState(() {
-                _messages.clear();
-                _messages.add(
-                  ChatMessage(
-                    text: 'Conversation cleared. Say "Hi Kee" or tap the orb to begin.',
-                    isUser: false,
-                    timestamp: DateTime.now(),
-                  ),
-                );
-              });
+              ref.read(unifiedChatProvider.notifier).clearChat();
             },
           ),
           const SizedBox(width: AppSpacing.xs),
@@ -294,9 +211,9 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                           ),
                         ],
                       ),
-                      if (assistant.isSpeaking)
+                      if (assistant.isSpeaking && safeVoiceCtrl != null)
                         InkWell(
-                          onTap: () => voiceCtrl.interrupt(),
+                          onTap: () => safeVoiceCtrl.interrupt(),
                           borderRadius: BorderRadius.circular(12),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -329,12 +246,13 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                       soundLevel: assistant.soundLevel,
                       size: 64,
                       onTap: () {
+                        if (safeVoiceCtrl == null) return;
                         if (assistant.isSpeaking) {
-                          voiceCtrl.interrupt();
+                          safeVoiceCtrl.interrupt();
                         } else if (assistant.isListening) {
-                          voiceCtrl.dismissSession();
+                          safeVoiceCtrl.dismissSession();
                         } else {
-                          voiceCtrl.startListening();
+                          safeVoiceCtrl.startListening();
                         }
                       },
                     ),
@@ -364,7 +282,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
               ),
             ),
 
-            // ─── 2. Scrollable Message Transcript ─────────────────
+            // ─── 2. Scrollable Unified Message Transcript ─────────
             Expanded(
               child: ListView.builder(
                 controller: _scrollController,
@@ -372,9 +290,9 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                   horizontal: AppSpacing.md,
                   vertical: AppSpacing.sm,
                 ),
-                itemCount: _messages.length,
+                itemCount: messages.length,
                 itemBuilder: (context, index) {
-                  final msg = _messages[index];
+                  final msg = messages[index];
                   return _buildMessageBubble(context, msg);
                 },
               ),
@@ -409,7 +327,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
               ),
 
             // Suggested prompt chips
-            if (_messages.length <= 3 && !_isProcessingText && !assistant.isListening)
+            if (messages.length <= 3 && !_isProcessingText && !assistant.isListening)
               SizedBox(
                 height: 38,
                 child: ListView.separated(
@@ -433,7 +351,11 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                         borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
                       ),
                       onPressed: () {
-                        voiceCtrl.processSpokenInput(prompt);
+                        if (safeVoiceCtrl != null) {
+                          safeVoiceCtrl.processSpokenInput(prompt);
+                        } else {
+                          _handleSendMessage(prompt);
+                        }
                       },
                     );
                   },
@@ -527,12 +449,13 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                     InkWell(
                       borderRadius: BorderRadius.circular(32),
                       onTap: () {
+                        if (safeVoiceCtrl == null) return;
                         if (assistant.isListening) {
-                          voiceCtrl.dismissSession();
+                          safeVoiceCtrl.dismissSession();
                         } else if (assistant.isSpeaking) {
-                          voiceCtrl.interrupt();
+                          safeVoiceCtrl.interrupt();
                         } else {
-                          voiceCtrl.startListening();
+                          safeVoiceCtrl.startListening();
                         }
                       },
                       child: Container(
@@ -575,7 +498,11 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                         color: assistant.isHandsFreeEnabled ? accentColor : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                       ),
                       tooltip: assistant.isHandsFreeEnabled ? 'Hands-Free: Say "Hi Kee"' : 'Tap to toggle hands-free',
-                      onPressed: () => voiceCtrl.toggleHandsFree(!assistant.isHandsFreeEnabled),
+                      onPressed: () {
+                        if (safeVoiceCtrl != null) {
+                          safeVoiceCtrl.toggleHandsFree(!assistant.isHandsFreeEnabled);
+                        }
+                      },
                     ),
                   ],
                 ),

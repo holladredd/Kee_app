@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../intelligence/conversation_provider.dart';
+import '../intelligence/unified_chat_provider.dart';
 import 'assistant_state.dart';
 import 'speech_recognition_service.dart';
 import 'text_to_speech_service.dart';
@@ -172,6 +173,23 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
       final action = await engine.processMessage(query);
 
       final reply = action.responseText;
+
+      // Automatically add to the single unified chat thread
+      try {
+        ref.read(unifiedChatProvider.notifier).recordVoiceTurn(
+          userText: query,
+          assistantText: reply,
+          intent: action.intent,
+          savedMemory: action.savedMemory,
+          scheduledReminder: action.scheduledReminder,
+          savedTask: action.savedTask,
+          citations: action.citedMemories,
+          citedReminders: action.citedReminders,
+          citedTasks: action.citedTasks,
+        );
+      } catch (e) {
+        debugPrint('[VoiceAssistantController] Failed to record in unified chat: $e');
+      }
 
       state = state.copyWith(
         state: AssistantState.speaking,

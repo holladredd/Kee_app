@@ -100,68 +100,49 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
 
-      // ─── Preserved Data Management Sub-routes ───────
-      GoRoute(
-        path: '/memories',
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const MemoriesScreen(),
+      // ─── Main Application Shell (Authenticated) ─────
+      ShellRoute(
+        builder: (context, state, child) {
+          return NavShell(
+            currentPath: state.uri.path,
+            child: child,
+          );
+        },
         routes: [
           GoRoute(
-            path: 'detail/:id',
-            parentNavigatorKey: _rootNavigatorKey,
-            builder: (context, state) {
-              final id = state.pathParameters['id'] ?? '';
-              return MemoryDetailScreen(memoryId: id);
-            },
+            path: '/home',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: HomeScreen(),
+            ),
           ),
-        ],
-      ),
-      GoRoute(
-        path: '/reminders',
-        parentNavigatorKey: _rootNavigatorKey,
-        builder: (context, state) => const RemindersScreen(),
-      ),
-
-      // ─── Main Conversation-First Shell (3 Tabs) ─────
-      StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) {
-          return NavShell(navigationShell: navigationShell);
-        },
-        branches: [
-          // Branch 1: Home
-          StatefulShellBranch(
+          GoRoute(
+            path: '/ask-kee',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: AskKeeScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/settings',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: SettingsScreen(),
+            ),
+          ),
+          GoRoute(
+            path: '/memories',
+            builder: (context, state) => const MemoriesScreen(),
             routes: [
               GoRoute(
-                path: '/home',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: HomeScreen(),
-                ),
+                path: 'detail/:id',
+                builder: (context, state) {
+                  final id = state.pathParameters['id'] ?? '';
+                  return MemoryDetailScreen(memoryId: id);
+                },
               ),
             ],
           ),
-
-          // Branch 2: Ask Kee (Primary Conversation Experience)
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/ask-kee',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: AskKeeScreen(),
-                ),
-              ),
-            ],
-          ),
-
-          // Branch 3: Settings (Controls & Privacy Vault)
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/settings',
-                pageBuilder: (context, state) => const NoTransitionPage(
-                  child: SettingsScreen(),
-                ),
-              ),
-            ],
+          GoRoute(
+            path: '/reminders',
+            builder: (context, state) => const RemindersScreen(),
           ),
         ],
       ),

@@ -6,40 +6,77 @@ import '../voice/assistant_state.dart';
 import '../voice/voice_assistant_controller.dart';
 import 'kee_voice_orb.dart';
 
-/// Floating assistant interface for Kee.
-/// Operates in two modes:
-/// 1. Compact floating button (orb + status pill)
-/// 2. Expandable bottom sheet / modal voice conversation overlay with live transcription,
-///    interruption control, and seamless switch to text.
-class KeeFloatingAssistant extends ConsumerWidget {
+/// Floating AI Assistant Widget for Kee.
+/// Appears everywhere across the entire application.
+/// When clicked, it does NOT navigate away; instead, it opens the interactive
+/// AI bubble overlay right on top of whatever screen the user is viewing.
+/// Everything discussed (spoken or typed) is automatically saved to the single unified chat.
+class KeeFloatingAssistant extends ConsumerStatefulWidget {
   const KeeFloatingAssistant({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final assistant = ref.watch(voiceAssistantProvider);
-    final controller = ref.read(voiceAssistantProvider.notifier);
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+  ConsumerState<KeeFloatingAssistant> createState() => _KeeFloatingAssistantState();
+}
 
-    final accentColor = isDark ? const Color(0xFFE8D0B2) : const Color(0xFFA6855B);
+class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
+  final TextEditingController _bubbleTextController = TextEditingController();
+  bool _showBubbleTextInput = false;
 
-    // If expanded, show the full voice conversation sheet
-    if (assistant.isExpanded) {
-      return _buildExpandedOverlay(context, ref, assistant, controller, theme, accentColor);
+  @override
+  void dispose() {
+    _bubbleTextController.dispose();
+    super.dispose();
+  }
+
+  void _sendBubbleText(VoiceAssistantController controller) {
+    final text = _bubbleTextController.text.trim();
+    if (text.isEmpty) return;
+    _bubbleTextController.clear();
+    setState(() => _showBubbleTextInput = false);
+    controller.processSpokenInput(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    VoiceAssistantState? assistant;
+    VoiceAssistantController? controller;
+
+    try {
+      assistant = ref.watch(voiceAssistantProvider);
+      controller = ref.read(voiceAssistantProvider.notifier);
+    } catch (_) {
+      // In case voice provider is initializing or unavailable
     }
 
-    // Compact floating assistant orb
+    if (assistant == null || controller == null) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final accentColor = isDark ? const Color(0xFFE8D0B2) : const Color(0xFFA6855B);
+
+    final safeCtrl = controller;
+    final safeAssistant = assistant;
+
+    // If expanded, show the in-place AI bubble overlay
+    if (safeAssistant.isExpanded) {
+      return _buildExpandedOverlay(context, safeAssistant, safeCtrl, theme, accentColor, isDark);
+    }
+
+    // Compact floating assistant button (stays pinned on screen)
     return Positioned(
       right: AppSpacing.md,
-      bottom: AppSpacing.xxl + 40,
+      bottom: AppSpacing.xl,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(40),
           onTap: () {
-            controller.setExpanded(true);
-            if (assistant.isIdle) {
-              controller.startListening();
+            // Open the AI bubble in-place without navigating away
+            safeCtrl.setExpanded(true);
+            if (safeAssistant.isIdle) {
+              safeCtrl.startListening();
             }
           },
           child: Container(
@@ -48,10 +85,10 @@ class KeeFloatingAssistant extends ConsumerWidget {
               color: isDark ? const Color(0xFF14120E) : const Color(0xFFFBF8F4),
               borderRadius: BorderRadius.circular(32),
               border: Border.all(
-                color: assistant.isListening
+                color: safeAssistant.isListening
                     ? accentColor
                     : (isDark ? const Color(0xFF2E271F) : const Color(0xFFE2D6C5)),
-                width: assistant.isListening ? 1.5 : 1.0,
+                width: safeAssistant.isListening ? 1.5 : 1.0,
               ),
               boxShadow: [
                 BoxShadow(
@@ -65,18 +102,18 @@ class KeeFloatingAssistant extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 KeeVoiceOrb(
-                  state: assistant.state,
-                  soundLevel: assistant.soundLevel,
+                  state: safeAssistant.state,
+                  soundLevel: safeAssistant.soundLevel,
                   size: 28,
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  _getStateLabel(assistant.state),
+                  _getStateLabel(safeAssistant.state),
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.3,
-                    color: assistant.isListening ? accentColor : theme.colorScheme.onSurface,
+                    color: safeAssistant.isListening ? accentColor : theme.colorScheme.onSurface,
                   ),
                 ),
               ],
@@ -106,21 +143,19 @@ class KeeFloatingAssistant extends ConsumerWidget {
 
   Widget _buildExpandedOverlay(
     BuildContext context,
-    WidgetRef ref,
     VoiceAssistantState assistant,
     VoiceAssistantController controller,
     ThemeData theme,
     Color accentColor,
+    bool isDark,
   ) {
-    final isDark = theme.brightness == Brightness.dark;
-
     return Positioned.fill(
       child: Material(
-        color: Colors.black.withValues(alpha: 0.65),
+        color: Colors.black.withValues(alpha: 0.72),
         child: SafeArea(
           child: Column(
             children: [
-              // Top bar with close / minimize controls
+              // Top bar with minimize, full-chat shortcut, and close
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                 child: Row(
@@ -128,11 +163,11 @@ class KeeFloatingAssistant extends ConsumerWidget {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-                      tooltip: 'Minimize to floating orb',
+                      tooltip: 'Minimize bubble',
                       onPressed: () => controller.setExpanded(false),
                     ),
                     Text(
-                      'Kee Voice Assistant',
+                      'Kee AI Assistant',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -140,10 +175,23 @@ class KeeFloatingAssistant extends ConsumerWidget {
                         color: accentColor,
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 24),
-                      tooltip: 'End conversation',
-                      onPressed: () => controller.dismissSession(),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.open_in_full_rounded, size: 20),
+                          tooltip: 'Open full chat page',
+                          onPressed: () {
+                            controller.setExpanded(false);
+                            context.push('/ask-kee');
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 22),
+                          tooltip: 'Close session',
+                          onPressed: () => controller.dismissSession(),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -151,12 +199,12 @@ class KeeFloatingAssistant extends ConsumerWidget {
 
               const Spacer(flex: 1),
 
-              // Animated Kee Voice Orb Hero
+              // Animated Voice Orb Hero
               Center(
                 child: KeeVoiceOrb(
                   state: assistant.state,
                   soundLevel: assistant.soundLevel,
-                  size: 90,
+                  size: 96,
                   onTap: () {
                     if (assistant.isSpeaking) {
                       controller.interrupt();
@@ -183,7 +231,7 @@ class KeeFloatingAssistant extends ConsumerWidget {
 
               const SizedBox(height: AppSpacing.lg),
 
-              // Spoken query / Live transcript display
+              // Live transcript or latest response
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
                 child: ConstrainedBox(
@@ -194,15 +242,15 @@ class KeeFloatingAssistant extends ConsumerWidget {
                           ? '"${assistant.liveTranscript}"'
                           : assistant.lastAssistantResponse.isNotEmpty
                               ? assistant.lastAssistantResponse
-                              : 'Say "Hi Kee" or tap the orb to talk...',
+                              : 'Talk naturally or type a question...',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 17,
+                        fontSize: 16,
                         height: 1.4,
                         fontWeight: FontWeight.w400,
                         color: assistant.liveTranscript.isNotEmpty
                             ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                            : theme.colorScheme.onSurface.withValues(alpha: 0.75),
                       ),
                     ),
                   ),
@@ -221,7 +269,45 @@ class KeeFloatingAssistant extends ConsumerWidget {
 
               const Spacer(flex: 2),
 
-              // Bottom control bar: Mic button, Interrupt button, Switch to Text button
+              // Optional in-bubble text input (so user can type right here without leaving!)
+              if (_showBubbleTextInput)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF221E19) : Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: accentColor.withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: AppSpacing.md),
+                        Expanded(
+                          child: TextField(
+                            controller: _bubbleTextController,
+                            autofocus: true,
+                            decoration: const InputDecoration(
+                              hintText: 'Type to Kee...',
+                              border: InputBorder.none,
+                              isDense: true,
+                            ),
+                            onSubmitted: (_) => _sendBubbleText(controller),
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.send_rounded, size: 20, color: accentColor),
+                          onPressed: () => _sendBubbleText(controller),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          onPressed: () => setState(() => _showBubbleTextInput = false),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Bottom control bar: Mic button, Interrupt button, Keyboard toggle
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
@@ -235,14 +321,11 @@ class KeeFloatingAssistant extends ConsumerWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    // Switch to Ask Kee text view
+                    // Toggle in-bubble keyboard
                     IconButton(
-                      icon: const Icon(Icons.keyboard_outlined),
-                      tooltip: 'Type instead',
-                      onPressed: () {
-                        controller.dismissSession();
-                        context.go('/ask-kee');
-                      },
+                      icon: Icon(_showBubbleTextInput ? Icons.keyboard_hide_outlined : Icons.keyboard_alt_outlined),
+                      tooltip: _showBubbleTextInput ? 'Hide keyboard' : 'Type here',
+                      onPressed: () => setState(() => _showBubbleTextInput = !_showBubbleTextInput),
                     ),
 
                     // Main Mic / Stop Turn Button
@@ -277,16 +360,14 @@ class KeeFloatingAssistant extends ConsumerWidget {
                       ),
                     ),
 
-                    // Tap to Interrupt Button (active especially when speaking)
+                    // Tap to Interrupt Button
                     TextButton.icon(
                       icon: const Icon(Icons.pan_tool_outlined, size: 18),
                       label: const Text('Interrupt', style: TextStyle(fontSize: 13)),
                       style: TextButton.styleFrom(
                         foregroundColor: assistant.isSpeaking ? accentColor : theme.colorScheme.onSurface.withValues(alpha: 0.4),
                       ),
-                      onPressed: assistant.isSpeaking
-                          ? () => controller.interrupt()
-                          : null,
+                      onPressed: assistant.isSpeaking ? () => controller.interrupt() : null,
                     ),
                   ],
                 ),
