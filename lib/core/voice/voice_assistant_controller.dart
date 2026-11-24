@@ -52,9 +52,9 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     };
 
     // Initialize Speech Error Handling
-    if (_speech is SpeechToTextService) {
-      final speechService = _speech as SpeechToTextService;
-      speechService.onError = (err) {
+    final speech = _speech;
+    if (speech is SpeechToTextService) {
+      speech.onError = (err) {
         final lower = err.toLowerCase();
         if (lower.contains('no-speech') || lower.contains('aborted')) {
           // If silence detected, gracefully return to idle rather than showing a red error
@@ -83,15 +83,15 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     }
 
     // Initialize TTS
-    if (_tts is FlutterTtsService) {
-      final flutterTts = _tts as FlutterTtsService;
-      flutterTts.onCompletion = () {
+    final tts = _tts;
+    if (tts is FlutterTtsService) {
+      tts.onCompletion = () {
         _onTtsCompleted();
       };
-      flutterTts.onCancel = () {
+      tts.onCancel = () {
         debugPrint('[VoiceAssistantController] TTS cancelled/interrupted');
       };
-      flutterTts.onError = (err) {
+      tts.onError = (err) {
         _handleError('Speech output notice: $err');
       };
     }
