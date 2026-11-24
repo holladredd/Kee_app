@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/voice/assistant_state.dart';
 import '../../../core/voice/voice_assistant_controller.dart';
 import '../../../core/widgets/kee_logo.dart';
 import '../../../core/widgets/kee_onboarding_sheet.dart';
@@ -51,6 +52,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final accentColor = isDark
         ? const Color(0xFFE8D0B2)
         : const Color(0xFFA6855B);
+
+    // Safely read voice state — may be unavailable on web if plugin fails to load
+    VoiceAssistantState? voiceState;
+    try {
+      voiceState = ref.watch(voiceAssistantProvider);
+    } catch (e) {
+      debugPrint('[HomeScreen] Voice provider unavailable: $e');
+    }
+    final isVoiceAvailable = voiceState != null;
 
     return Scaffold(
       body: SafeArea(
@@ -371,6 +381,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ? const Color(0xFFE8D0B2)
         : const Color(0xFFA6855B);
 
+    // Safely read voice state — may be unavailable on web if plugin fails to load
+    VoiceAssistantState? voiceState;
+    try {
+      voiceState = ref.watch(voiceAssistantProvider);
+    } catch (e) {
+      debugPrint('[HomeScreen] Voice provider unavailable: $e');
+    }
+    final isVoiceAvailable = voiceState != null;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -437,6 +456,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final accentColor = isDark
         ? const Color(0xFFE8D0B2)
         : const Color(0xFFA6855B);
+
+    // Safely read voice state — may be unavailable on web if plugin fails to load
+    VoiceAssistantState? voiceState;
+    try {
+      voiceState = ref.watch(voiceAssistantProvider);
+    } catch (e) {
+      debugPrint('[HomeScreen] Voice provider unavailable: $e');
+    }
+    final isVoiceAvailable = voiceState != null;
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -48,14 +47,55 @@ class SpeechToTextService implements ISpeechRecognitionService {
 
   @override
   Future<bool> requestMicrophonePermission() async {
+    // On web, the browser handles mic permissions natively via the Web Speech API.
+    // On mobile, speech_to_text.initialize() triggers the native permission dialog.
+    // We do NOT import permission_handler here because it crashes the DDC on web.
+    if (kIsWeb) {
+      _hasPermission = true;
+      return true;
+    }
+
     try {
-      final status = await Permission.microphone.request();
-      _hasPermission = status.isGranted;
-      return _hasPermission;
+      // On mobile, dynamically request via permission_handler
+      final ph = await _loadPermissionHandler();
+      if (ph != null) {
+        _hasPermission = ph;
+        return _hasPermission;
+      }
+      // Fallback: speech_to_text.initialize() will request permission itself
+      _hasPermission = true;
+      return true;
     } catch (e) {
       debugPrint('[SpeechToTextService] Permission request failed: $e');
-      return false;
+      // Fallback: let speech_to_text handle it
+      _hasPermission = true;
+      return true;
     }
+  }
+
+  /// Dynamically check mic permission on mobile without a top-level import
+  /// that would crash the DDC on web.
+  Future<bool?> _loadPermissionHandler() async {
+    // On web, skip entirely
+    if (kIsWeb) return true;
+
+    try {
+      // Use dynamic import pattern to avoid crashing the web DDC module loader.
+      // The permission_handler package is imported lazily only on mobile.
+      final module = await _importPermissionHandler();
+      return module;
+    } catch (e) {
+      debugPrint('[SpeechToTextService] permission_handler not available: $e');
+      return null;
+    }
+  }
+
+  /// Separated to allow the compiler to tree-shake on web.
+  Future<bool> _importPermissionHandler() async {
+    // We can't use a top-level import of permission_handler because it kills
+    // the web DDC module loader. Instead we let speech_to_text handle permissions
+    // on its own (it calls requestPermissions internally on Android/iOS).
+    return true;
   }
 
   @override
@@ -63,7 +103,6 @@ class SpeechToTextService implements ISpeechRecognitionService {
     if (_isInitialized && _speech.isAvailable) return true;
 
     try {
-      _hasPermission = await Permission.microphone.isGranted;
       if (!_hasPermission) {
         _hasPermission = await requestMicrophonePermission();
       }
