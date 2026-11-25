@@ -97,16 +97,47 @@ class DeterministicClassifier {
       );
     }
 
-    // 5. Check for Shopping / Purchase Intentions
-    // Example: "I want to buy new headphones."
-    if (RegExp(r'\b(want to buy|need to buy|purchase|pick up from store|groceries|shopping list)\b').hasMatch(lower)) {
-      final title = _generateTitle(trimmed, prefixToRemove: ['want to buy', 'need to buy', 'buy']);
+    // 5. Check for Purchase Intentions vs Active Tasks
+    // "I want to buy a laptop" is an INTENTION / IDEA, not an active task!
+    if (RegExp(r'\b(want to buy|thinking of buying|would like to buy|planning to buy|considering buying)\b').hasMatch(lower)) {
+      final title = _generateTitle(trimmed, prefixToRemove: ['i want to buy', 'want to buy', 'thinking of buying', 'planning to buy', 'buy']);
+      return ClassificationResult(
+        title: title,
+        memoryType: 'idea',
+        category: 'Ideas',
+        tags: ['intention', 'shopping', ..._extractTags(lower)],
+        shouldCreateTask: false,
+        shouldCreateReminder: false,
+      );
+    }
+
+    // Active Shopping Task (e.g. "need to buy groceries", "pick up from store", "shopping list")
+    if (RegExp(r'\b(need to buy|must buy|pick up from store|groceries|shopping list)\b').hasMatch(lower)) {
+      final title = _generateTitle(trimmed, prefixToRemove: ['need to buy', 'must buy', 'buy']);
       return ClassificationResult(
         title: title,
         memoryType: 'shopping',
         category: 'Shopping',
         tags: ['shopping', ..._extractTags(lower)],
         shouldCreateTask: true,
+        shouldCreateReminder: false,
+      );
+    }
+
+    // 6. Check for Experiences and Past Events
+    // Example: "I met David yesterday at a conference."
+    if (RegExp(r'\b(met|attended|visited|went to|talked with|spoke with|had a meeting with|saw)\b').hasMatch(lower)) {
+      final person = _extractPerson(trimmed);
+      final dateResult = NlpDateParser.parse(trimmed);
+      final title = _generateTitle(trimmed, prefixToRemove: ['i met', 'i attended', 'i visited', 'i went to']);
+      return ClassificationResult(
+        title: title,
+        memoryType: 'experience',
+        category: _detectCategory(lower, defaultCat: 'Personal'),
+        tags: ['experience', ..._extractTags(lower), if (person != null) person.toLowerCase()],
+        associatedPerson: person,
+        associatedDate: dateResult.dateTime,
+        shouldCreateTask: false,
         shouldCreateReminder: false,
       );
     }

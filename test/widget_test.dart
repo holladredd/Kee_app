@@ -276,6 +276,50 @@ void main() {
       expect(queryAction.responseText.toLowerCase(), contains('espresso'));
     });
 
+    test('Handles explicit memory instruction with leading wake word', () async {
+      final action = await engine.processMessage('Hi Kee, remember that I prefer coffee');
+
+      expect(action.intent, equals(MessageIntent.preference));
+      expect(action.savedMemory, isNotNull);
+      expect(action.savedMemory!.title.toLowerCase(), contains('coffee'));
+      expect(action.responseText.toLowerCase(), contains('coffee'));
+    });
+
+    test('Updates existing preference when user changes preference', () async {
+      // 1. First save initial preference
+      await engine.processMessage('I prefer dark mode');
+
+      // 2. Change preference
+      final updateAction = await engine.processMessage('I no longer prefer dark mode. I prefer light mode.');
+
+      expect(updateAction.intent, equals(MessageIntent.preference));
+      expect(updateAction.responseText.toLowerCase(), contains('light mode'));
+
+      // Check no duplicate created
+      final memories = await memoryRepo.getAllMemories();
+      final modePrefs = memories.where((m) => m.memoryType == 'personal_preference').toList();
+      expect(modePrefs.length, equals(1)); // Exactly 1 preference updated, NOT duplicated!
+      expect(modePrefs.first.title.toLowerCase(), contains('light mode'));
+    });
+
+    test('Does not create task or reminder from purchase intention', () async {
+      final action = await engine.processMessage('I want to buy a laptop');
+
+      expect(action.intent, equals(MessageIntent.idea));
+      expect(action.savedMemory, isNotNull);
+      expect(action.savedTask, isNull); // Rule 11: Do not create tasks from every intention!
+      expect(action.scheduledReminder, isNull);
+    });
+
+    test('Answers general weather question without searching memories or saving junk', () async {
+      final action = await engine.processMessage("What's the weather like?");
+
+      expect(action.intent, equals(MessageIntent.casualConversation));
+      expect(action.savedMemory, isNull);
+      expect(action.responseText.toLowerCase(), contains('weather'));
+      expect(action.responseText.toLowerCase(), isNot(contains('could not find')));
+    });
+
     test('Handles unavailable providers gracefully without crashing', () async {
       final action = await engine.processMessage('');
       expect(action.intent, equals(MessageIntent.casualConversation));

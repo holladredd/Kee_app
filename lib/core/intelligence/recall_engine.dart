@@ -150,7 +150,7 @@ class RecallEngine implements AiAssistantEngine {
     }
 
     // 6. Check for Preferences Question
-    // e.g. "What did I say about my preferred working hours?"
+    // e.g. "What did I say about my preferred working hours?", "What are my preferences?"
     if (qLower.contains('prefer') || qLower.contains('preference') || qLower.contains('favorite') || qLower.contains('favourite')) {
       final prefs = memories.where((m) => m.memoryType == 'personal_preference').toList();
       if (prefs.isNotEmpty) {
@@ -159,6 +159,11 @@ class RecallEngine implements AiAssistantEngine {
           text: 'Here are your saved preferences:\n\n$list',
           citedMemories: prefs,
           hasDirectMatch: true,
+        );
+      } else {
+        return RecallAnswer(
+          text: "You haven't saved any personal preferences yet. Tell me things you prefer (e.g. *'I prefer dark mode'*, *'I prefer coffee'*) and I'll keep them in mind.",
+          hasDirectMatch: false,
         );
       }
     }
@@ -205,8 +210,18 @@ class RecallEngine implements AiAssistantEngine {
     }
 
     // 8. Grounded Fallback: NEVER hallucinate!
+    final aboutMatch = RegExp(r'\b(about|regarding)\s+([a-zA-Z0-9\s]+?)(\?|$)', caseSensitive: false).firstMatch(question);
+    final subject = aboutMatch != null ? aboutMatch.group(2)?.trim() : null;
+
+    if (subject != null && subject.isNotEmpty && subject.length < 30) {
+      return RecallAnswer(
+        text: "I couldn't find any saved memories about $subject.",
+        hasDirectMatch: false,
+      );
+    }
+
     return RecallAnswer(
-      text: 'I could not find any saved memories or reminders matching "$question".\n\nTry rephrasing or capturing it with Quick Capture.',
+      text: 'I could not find any saved memories or reminders matching "$question".',
       hasDirectMatch: false,
     );
   }

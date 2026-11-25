@@ -66,17 +66,25 @@ class KeeConversationEngine {
         _notificationService = notificationService ?? NotificationService.instance,
         _recallEngine = recallEngine ?? RecallEngine();
 
-  /// Process any natural-language user message.
+  /// Process any natural-language user message (voice or typed).
   Future<ConversationAction> processMessage(String rawInput) async {
-    final trimmed = rawInput.trim();
-    final lower = trimmed.toLowerCase();
+    var text = rawInput.trim();
 
-    if (trimmed.isEmpty) {
+    // ─── 0. STRIP LEADING WAKE PHRASES & CONVERSATIONAL ADDRESSES ───
+    // e.g. "Hi Kee, remember that I prefer coffee" -> "remember that I prefer coffee"
+    final wakeMatch = RegExp(r'^(hi|hey|hello|ok|okay)?\s*kee[,\s!]*', caseSensitive: false).firstMatch(text);
+    if (wakeMatch != null) {
+      text = text.substring(wakeMatch.end).trim();
+    }
+
+    if (text.isEmpty) {
       return const ConversationAction(
         responseText: "I'm listening. Tell me something to remember or ask me anything you've saved.",
         intent: MessageIntent.casualConversation,
       );
     }
+
+    final lower = text.toLowerCase();
 
     // ─── 1. GREETINGS & CASUAL CONVERSATION (Do NOT save junk) ───
     if (_isCasualGreeting(lower)) {
@@ -86,45 +94,77 @@ class KeeConversationEngine {
       );
     }
 
-    // ─── 2. QUERIES & RETRIEVAL INTENT ────────────────────────────
+    // ─── 2. GENERAL KNOWLEDGE / WEATHER CHITCHAT (Do NOT pollute memory search) ───
+    // e.g. "What's the weather like?", "What time is it?"
+    if (_isGeneralChitchatQuestion(lower)) {
+      return ConversationAction(
+        responseText: _generateChitchatResponse(lower),
+        intent: MessageIntent.casualConversation,
+      );
+    }
+
+    // ─── 3. PREFERENCE UPDATE / CORRECTION ────────────────────────
+    // e.g. "I no longer prefer dark mode. I prefer light mode."
+    // e.g. "Change my preference for coffee to tea."
+    if (_isPreferenceUpdate(lower)) {
+      return await _handlePreferenceUpdate(text);
+    }
+
+    // ─── 4. EXPLICIT MEMORY COMMAND PREFIXES ──────────────────────
+    // e.g. "Remember that...", "Don't forget that...", "Keep this in mind", "Save this for later"
+    final explicitMatch = RegExp(
+      r'^(remember\s+that|remember\s+this|remember|don\x27?t\s+forget\s+that|keep\s+this\s+in\s+mind|keep\s+in\s+mind\s+that|i\s+want\s+you\s+to\s+know\s+that|save\s+this\s+for\s+later|save\s+this|this\s+is\s+important\s+to\s+me)[,:\s]+',
+      caseSensitive: false,
+    ).firstMatch(text);
+
+    String effectiveText = text;
+    bool isExplicitSave = false;
+    if (explicitMatch != null) {
+      isExplicitSave = true;
+      effectiveText = text.substring(explicitMatch.end).trim();
+      if (effectiveText.isEmpty) effectiveText = text;
+    }
+    final effectiveLower = effectiveText.toLowerCase();
+
+    // ─── 5. QUERIES & RETRIEVAL INTENT ────────────────────────────
     // If user is asking a question about memories, tasks, reminders, or facts
-    if (_isQueryIntent(lower)) {
-      return await _handleQuery(trimmed);
+    if (!isExplicitSave && _isQueryIntent(effectiveLower)) {
+      return await _handleQuery(effectiveText);
     }
 
-    // ─── 3. EXPLICIT REMINDER INTENT ──────────────────────────────
+    // ─── 6. EXPLICIT REMINDER INTENT ──────────────────────────────
     // e.g. "Remind me to call John tomorrow at 9 AM"
-    if (_isReminderIntent(lower)) {
-      return await _handleReminder(trimmed);
+    if (_isReminderIntent(effectiveLower)) {
+      return await _handleReminder(effectiveText);
     }
 
-    // ─── 4. PERSONAL PREFERENCE INTENT ────────────────────────────
-    // e.g. "I prefer dark mode", "I love Ethiopian coffee"
-    if (_isPreferenceIntent(lower)) {
-      return await _handlePreference(trimmed);
+    // ─── 7. PERSONAL PREFERENCE INTENT ────────────────────────────
+    // e.g. "I prefer dark mode", "Remember that I prefer coffee"
+    if (_isPreferenceIntent(effectiveLower)) {
+      return await _handlePreference(effectiveText);
     }
 
-    // ─── 5. IMPORTANT DATE / BIRTHDAY / FACT ──────────────────────
-    // e.g. "My mum's birthday is February 14"
-    if (_isImportantDateOrFact(lower)) {
-      return await _handleImportantDateOrFact(trimmed);
+    // ─── 8. IMPORTANT DATE / BIRTHDAY / FACT ──────────────────────
+    // e.g. "My birthday is March 12", "My mum's birthday is February 14"
+    if (_isImportantDateOrFact(effectiveLower)) {
+      return await _handleImportantDateOrFact(effectiveText);
     }
 
-    // ─── 6. IDEA / BRAINSTORM ─────────────────────────────────────
-    // e.g. "I have an idea for an app that helps farmers"
-    if (_isIdeaIntent(lower)) {
-      return await _handleIdea(trimmed);
+    // ─── 9. IDEA / INTENTION ──────────────────────────────────────
+    // e.g. "I want to buy a laptop", "I have an idea for an app"
+    if (_isIdeaOrIntentionIntent(effectiveLower)) {
+      return await _handleIdeaOrIntention(effectiveText);
     }
 
-    // ─── 7. SHOPPING & INTENTIONS ─────────────────────────────────
-    // e.g. "I need to buy a new laptop", "Pick up groceries"
-    if (_isShoppingOrTaskIntent(lower)) {
-      return await _handleShoppingOrTask(trimmed);
+    // ─── 10. ACTIVE SHOPPING / TASK ───────────────────────────────
+    // e.g. "Need to buy groceries", "Pick up milk from store"
+    if (_isShoppingOrTaskIntent(effectiveLower)) {
+      return await _handleShoppingOrTask(effectiveText);
     }
 
-    // ─── 8. EVENT OR GENERAL MEMORY (Default Catch-all) ───────────
-    // e.g. "I met David at the conference yesterday"
-    return await _handleEventOrGeneralMemory(trimmed);
+    // ─── 11. EXPERIENCE OR GENERAL MEMORY ─────────────────────────
+    // e.g. "I met David yesterday at a conference", or explicit "Remember that..."
+    return await _handleEventOrGeneralMemory(effectiveText);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -251,22 +291,30 @@ class KeeConversationEngine {
     final classification = DeterministicClassifier.classify(text);
     final now = DateTime.now();
 
-    // Check for existing preference with similar title/content to prevent duplicates
+    // Check for existing preference with similar title or keywords to prevent duplicates
     final existingMemories = await _memoryRepo.getAllMemories();
     MemoryModel? existing;
     for (final m in existingMemories) {
-      if (m.memoryType == 'personal_preference' &&
-          (m.title.toLowerCase() == classification.title.toLowerCase() ||
-              m.originalContent.toLowerCase() == text.toLowerCase())) {
-        existing = m;
-        break;
+      if (m.memoryType == 'personal_preference') {
+        final titleA = m.title.toLowerCase();
+        final titleB = classification.title.toLowerCase();
+        if (titleA == titleB ||
+            m.originalContent.toLowerCase() == text.toLowerCase() ||
+            (titleA.contains('dark') && titleB.contains('dark')) ||
+            (titleA.contains('light') && titleB.contains('light')) ||
+            (titleA.contains('coffee') && titleB.contains('coffee'))) {
+          existing = m;
+          break;
+        }
       }
     }
 
     if (existing != null) {
       // Update existing preference
       final updated = existing.copyWith(
+        title: classification.title,
         originalContent: text,
+        processedContent: 'User preference: ${classification.title}',
         updatedAt: now,
       );
       await _memoryRepo.updateMemory(updated);
@@ -297,6 +345,58 @@ class KeeConversationEngine {
     );
   }
 
+  /// Handles preference updates/corrections:
+  /// e.g. "I no longer prefer dark mode. I prefer light mode."
+  Future<ConversationAction> _handlePreferenceUpdate(String text) async {
+    final classification = DeterministicClassifier.classify(text);
+    final now = DateTime.now();
+    final lower = text.toLowerCase();
+
+    final existingMemories = await _memoryRepo.getAllMemories();
+    MemoryModel? target;
+
+    // Look for existing preference memory to supersede
+    for (final m in existingMemories) {
+      if (m.memoryType == 'personal_preference') {
+        final mLower = '${m.title} ${m.originalContent}'.toLowerCase();
+        // Check for domain overlap (e.g. mode/theme, beverage, music)
+        if ((mLower.contains('mode') || mLower.contains('theme')) && (lower.contains('mode') || lower.contains('theme'))) {
+          target = m;
+          break;
+        } else if ((mLower.contains('coffee') || mLower.contains('tea')) && (lower.contains('coffee') || lower.contains('tea'))) {
+          target = m;
+          break;
+        }
+      }
+    }
+
+    // Determine new preference title
+    String newTitle = classification.title;
+    if (lower.contains('prefer light mode') || lower.contains('light mode')) {
+      newTitle = 'Light mode';
+    } else if (lower.contains('prefer dark mode') || lower.contains('dark mode')) {
+      newTitle = 'Dark mode';
+    }
+
+    if (target != null) {
+      final updated = target.copyWith(
+        title: 'Prefers $newTitle',
+        originalContent: text,
+        processedContent: 'User preference: $newTitle (updated)',
+        updatedAt: now,
+      );
+      await _memoryRepo.updateMemory(updated);
+      return ConversationAction(
+        responseText: "I've updated your preference to **$newTitle**.",
+        intent: MessageIntent.preference,
+        savedMemory: updated,
+      );
+    }
+
+    // If no existing match, save as new preference
+    return _handlePreference(text);
+  }
+
   Future<ConversationAction> _handleImportantDateOrFact(String text) async {
     final dateResult = NlpDateParser.parse(text);
     final classification = DeterministicClassifier.classify(text);
@@ -320,10 +420,10 @@ class KeeConversationEngine {
     await _memoryRepo.createMemory(memory);
 
     final personNotice = classification.associatedPerson != null
-        ? " associated with ${classification.associatedPerson}"
+        ? " for ${classification.associatedPerson}"
         : "";
     final dateNotice = dateResult.dateTime != null
-        ? " for ${DateFormat('MMMM d').format(dateResult.dateTime!)}"
+        ? " on ${DateFormat('MMMM d').format(dateResult.dateTime!)}"
         : "";
 
     return ConversationAction(
@@ -333,7 +433,7 @@ class KeeConversationEngine {
     );
   }
 
-  Future<ConversationAction> _handleIdea(String text) async {
+  Future<ConversationAction> _handleIdeaOrIntention(String text) async {
     final classification = DeterministicClassifier.classify(text);
     final now = DateTime.now();
 
@@ -343,14 +443,14 @@ class KeeConversationEngine {
       originalContent: text,
       memoryType: 'idea',
       category: 'Ideas',
-      tags: ['idea', ...classification.tags],
+      tags: ['idea', 'intention', ...classification.tags],
       createdAt: now,
       updatedAt: now,
     );
     await _memoryRepo.createMemory(memory);
 
     return ConversationAction(
-      responseText: "Great idea! I've captured **${classification.title}** in your ideas vault. You can revisit it anytime.",
+      responseText: "I've saved **${classification.title}** in your ideas & intentions. You can revisit it anytime.",
       intent: MessageIntent.idea,
       savedMemory: memory,
     );
@@ -402,7 +502,7 @@ class KeeConversationEngine {
       id: memoryId,
       title: classification.title,
       originalContent: text,
-      memoryType: classification.associatedDate != null ? 'event' : 'personal_memory',
+      memoryType: classification.memoryType == 'experience' ? 'experience' : 'personal_memory',
       category: classification.category,
       tags: classification.tags,
       associatedPerson: classification.associatedPerson,
@@ -441,7 +541,7 @@ class KeeConversationEngine {
     if (lower.contains('who are you') || lower.contains('what can you do') || lower.contains('help')) {
       return "I am Kee (Knowledge Extension Entity)—your personal AI memory assistant.\n\n"
           "You can simply talk to me:\n"
-          "• Tell me things to remember: *'My mum's birthday is Feb 14'*, *'I prefer dark mode'*, *'I met David at the tech summit'*\n"
+          "• Tell me things to remember: *'My birthday is March 12'*, *'I prefer dark mode'*, *'I met David at the tech summit'*\n"
           "• Schedule reminders: *'Remind me to call John tomorrow at 9 AM'*\n"
           "• Ask questions: *'What did I say about David?'*, *'What do I have tomorrow?'*\n\n"
           "Everything is securely stored and processed right on your device. Your memory. Extended.";
@@ -449,13 +549,35 @@ class KeeConversationEngine {
     return "Hello! I'm Kee, ready to extend your memory. What's on your mind today?";
   }
 
+  bool _isGeneralChitchatQuestion(String lower) {
+    return RegExp(r'\b(weather|temperature|forecast|rain|snow|what time is it|current time|what day is it|tell me a joke|meaning of life)\b').hasMatch(lower);
+  }
+
+  String _generateChitchatResponse(String lower) {
+    if (lower.contains('weather') || lower.contains('temperature') || lower.contains('forecast') || lower.contains('rain')) {
+      return "I don't have access to live weather broadcasts, but I'm always ready to help you save memories, manage preferences, and schedule reminders.";
+    }
+    if (lower.contains('time') || lower.contains('day')) {
+      final now = DateTime.now();
+      return "Currently, it's ${DateFormat('EEEE, MMMM d, yyyy · h:mm a').format(now)}.";
+    }
+    if (lower.contains('joke')) {
+      return "Why do programmers prefer dark mode? Because light attracts bugs!";
+    }
+    return "I am here to help you remember and organize what matters.";
+  }
+
+  bool _isPreferenceUpdate(String lower) {
+    return RegExp(r"\b(no longer prefer|don'?t like .* anymore|change my preference|actually .* prefer|instead of .* i prefer)\b").hasMatch(lower);
+  }
+
   bool _isQueryIntent(String lower) {
     return lower.endsWith('?') ||
-        RegExp(r'\b(what|which|when|who|where|how|did i|have i|do i have|tell me|show me|find|search|recall|look up|any reminders|upcoming)\b').hasMatch(lower);
+        RegExp(r'\b(what did i|what was|what are my|what do i have|which|when is|who is|where did|did i|have i|tell me about|recall|search)\b').hasMatch(lower);
   }
 
   bool _isReminderIntent(String lower) {
-    return RegExp(r"\b(remind me|don'?t forget|alert me|notify me|set a reminder)\b").hasMatch(lower);
+    return RegExp(r"\b(remind me|alert me to|notify me|set a reminder|don'?t forget to)\b").hasMatch(lower);
   }
 
   bool _isPreferenceIntent(String lower) {
@@ -466,11 +588,11 @@ class KeeConversationEngine {
     return RegExp(r'\b(birthday|anniversary|warranty|renewal|contract ends|expires?|due date)\b').hasMatch(lower);
   }
 
-  bool _isIdeaIntent(String lower) {
-    return RegExp(r'\b(idea for|what if we|thought about making|concept for|brainstorm)\b').hasMatch(lower);
+  bool _isIdeaOrIntentionIntent(String lower) {
+    return RegExp(r'\b(want to buy|thinking of buying|planning to buy|considering buying|idea for|what if we|thought about making|concept for|brainstorm)\b').hasMatch(lower);
   }
 
   bool _isShoppingOrTaskIntent(String lower) {
-    return RegExp(r'\b(want to buy|need to buy|purchase|pick up|shopping list|groceries)\b').hasMatch(lower);
+    return RegExp(r'\b(need to buy|must buy|pick up from store|shopping list|groceries|need to|have to|must)\b').hasMatch(lower);
   }
 }
