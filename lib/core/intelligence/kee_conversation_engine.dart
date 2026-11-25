@@ -54,6 +54,7 @@ class KeeConversationEngine {
   final ReminderRepository _reminderRepo;
   final NotificationService _notificationService;
   final RecallEngine _recallEngine;
+  final Future<Map<String, dynamic>> Function(String action, String target)? _deviceActionHandler;
   final Uuid _uuid = const Uuid();
 
   KeeConversationEngine({
@@ -61,10 +62,12 @@ class KeeConversationEngine {
     required ReminderRepository reminderRepo,
     NotificationService? notificationService,
     RecallEngine? recallEngine,
+    Future<Map<String, dynamic>> Function(String action, String target)? deviceActionHandler,
   })  : _memoryRepo = memoryRepo,
         _reminderRepo = reminderRepo,
         _notificationService = notificationService ?? NotificationService.instance,
-        _recallEngine = recallEngine ?? RecallEngine();
+        _recallEngine = recallEngine ?? RecallEngine(),
+        _deviceActionHandler = deviceActionHandler;
 
   /// Process any natural-language user message (voice or typed).
   Future<ConversationAction> processMessage(String rawInput) async {
@@ -130,15 +133,21 @@ class KeeConversationEngine {
     }
     final effectiveLower = effectiveText.toLowerCase();
 
+    // ─── 4.5. DEVICE & APP ACTIONS (Open apps, Phone book, Make calls) ───
+    if (!isExplicitSave) {
+      final deviceAction = await _tryHandleDeviceAction(effectiveText, effectiveLower);
+      if (deviceAction != null) return deviceAction;
+    }
+
     // ─── 5. QUERIES & RETRIEVAL INTENT ────────────────────────────
     // If user is asking a question about memories, tasks, reminders, or facts
     if (!isExplicitSave && _isQueryIntent(effectiveLower)) {
       return await _handleQuery(effectiveText);
     }
 
-    // ─── 6. EXPLICIT REMINDER INTENT ──────────────────────────────
-    // e.g. "Remind me to call John tomorrow at 9 AM"
-    if (_isReminderIntent(effectiveLower)) {
+    // ─── 6. EXPLICIT REMINDER / APPOINTMENT / SCHEDULE INTENT ──────
+    // e.g. "Remind me to call John tomorrow at 9 AM" or "I have an appointment Friday at 2 PM"
+    if (_isReminderIntent(effectiveLower) || _isScheduleOrAppointment(effectiveLower)) {
       return await _handleReminder(effectiveText);
     }
 
@@ -166,9 +175,69 @@ class KeeConversationEngine {
       return await _handleShoppingOrTask(effectiveText);
     }
 
-    // ─── 11. EXPERIENCE OR GENERAL MEMORY ─────────────────────────
-    // e.g. "I met David yesterday at a conference", or explicit "Remember that..."
-    return await _handleEventOrGeneralMemory(effectiveText);
+    // ─── 11. EXPLICIT SAVE OR CLEAR PERSONAL EXPERIENCE/FACT ONLY ─
+    // Never save every random spoken sentence automatically.
+    if (isExplicitSave || _isPersonalExperienceOrFact(effectiveLower)) {
+      return await _handleEventOrGeneralMemory(effectiveText);
+    }
+
+    // ─── 12. UNCLEAR / CASUAL UTTERANCE (Do NOT save; ask or converse) ─
+    return ConversationAction(
+      responseText:
+          "I didn't save that automatically. Would you like me to remember it, set a reminder, or help you open an app or make a call?",
+      intent: MessageIntent.casualConversation,
+      requiresClarification: true,
+    );
+  }
+
+  Future<ConversationAction?> _tryHandleDeviceAction(String text, String lower) async {
+    // Open app / phone book / contacts
+    final openMatch = RegExp(
+      r'^(?:please\s+)?(?:open|launch|start)\s+(?:my\s+|the\s+)?(.+)$',
+      caseSensitive: false,
+    ).firstMatch(text.trim());
+    if (openMatch != null) {
+      final target = openMatch.group(1)!.replaceAll(RegExp(r'[.!?]+$'), '').trim();
+      if (target.isNotEmpty) {
+        if (_deviceActionHandler != null) {
+          final res = await _deviceActionHandler('openApp', target);
+          final msg = res['message'] as String? ?? 'Opening $target.';
+          return ConversationAction(
+            responseText: msg,
+            intent: MessageIntent.casualConversation,
+          );
+        }
+        return ConversationAction(
+          responseText: 'Opening $target.',
+          intent: MessageIntent.casualConversation,
+        );
+      }
+    }
+
+    // Call / dial contact or phone number
+    final callMatch = RegExp(
+      r'^(?:please\s+)?(?:call|dial|phone|ring)\s+(.+)$',
+      caseSensitive: false,
+    ).firstMatch(text.trim());
+    if (callMatch != null && !lower.contains('remind me')) {
+      final target = callMatch.group(1)!.replaceAll(RegExp(r'[.!?]+$'), '').trim();
+      if (target.isNotEmpty) {
+        if (_deviceActionHandler != null) {
+          final res = await _deviceActionHandler('callContact', target);
+          final msg = res['message'] as String? ?? 'Calling $target.';
+          return ConversationAction(
+            responseText: msg,
+            intent: MessageIntent.casualConversation,
+          );
+        }
+        return ConversationAction(
+          responseText: 'Calling $target.',
+          intent: MessageIntent.casualConversation,
+        );
+      }
+    }
+
+    return null;
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -582,6 +651,16 @@ class KeeConversationEngine {
 
   bool _isReminderIntent(String lower) {
     return RegExp(r"\b(remind me|alert me to|notify me|set a reminder|don'?t forget to)\b").hasMatch(lower);
+  }
+
+  bool _isScheduleOrAppointment(String lower) {
+    return RegExp(r'\b(appointment|schedule|meeting with|doctor.?s? visit|dentist|flight at|interview)\b').hasMatch(lower);
+  }
+
+  bool _isPersonalExperienceOrFact(String lower) {
+    return RegExp(
+      r'\b(i met|i attended|i visited|i went to|i saw|i graduated|i work at|i live in|my name is|my phone number is|my email is|my address is|my pin|my password)\b',
+    ).hasMatch(lower);
   }
 
   bool _isPreferenceIntent(String lower) {

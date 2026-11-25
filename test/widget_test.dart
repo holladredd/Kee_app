@@ -325,6 +325,26 @@ void main() {
       expect(action.intent, equals(MessageIntent.casualConversation));
       expect(action.responseText, isNotEmpty);
     });
+
+    test('Does NOT save random casual utterances and asks clarification instead', () async {
+      final action = await engine.processMessage('Testing microphone one two three');
+
+      expect(action.savedMemory, isNull);
+      expect(action.scheduledReminder, isNull);
+      expect(action.savedTask, isNull);
+      expect(action.requiresClarification, isTrue);
+
+      final memories = await memoryRepo.getAllMemories();
+      expect(memories.isEmpty, isTrue);
+    });
+
+    test('Asks for time when appointment lacks date/time', () async {
+      final action = await engine.processMessage('I have a dentist appointment');
+
+      expect(action.intent, equals(MessageIntent.reminder));
+      expect(action.requiresClarification, isTrue);
+      expect(action.scheduledReminder, isNull);
+    });
   });
 
   group('Voice Assistant State & Interruption Tests', () {

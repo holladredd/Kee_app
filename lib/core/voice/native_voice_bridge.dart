@@ -145,6 +145,30 @@ class NativeVoiceBridge {
     }
   }
 
+  Future<Map<String, dynamic>> openApp(String appName) async {
+    if (kIsWeb || !Platform.isAndroid) {
+      return {'success': false, 'message': 'App launching is only supported on Android.'};
+    }
+    try {
+      final res = await _channel.invokeMethod<Map>('openApp', {'appName': appName});
+      return Map<String, dynamic>.from(res ?? {});
+    } catch (e) {
+      return {'success': false, 'message': "Couldn't open $appName."};
+    }
+  }
+
+  Future<Map<String, dynamic>> callContact(String target) async {
+    if (kIsWeb || !Platform.isAndroid) {
+      return {'success': false, 'message': 'Calling is only supported on Android.'};
+    }
+    try {
+      final res = await _channel.invokeMethod<Map>('callContact', {'target': target});
+      return Map<String, dynamic>.from(res ?? {});
+    } catch (e) {
+      return {'success': false, 'message': "Couldn't place call to $target."};
+    }
+  }
+
   Future<bool> isWakeWordModelReady() async {
     if (kIsWeb || !Platform.isAndroid) return true;
     try {
