@@ -26,10 +26,10 @@ class ApiService {
       return 'http://localhost:$port$basePath';
     }
 
-    // On physical Android device, use the host machine's local network IP.
-    // For emulator, 10.0.2.2 maps to the host loopback.
+    // On Android devices, 127.0.0.1 works seamlessly when port reverse is active:
+    // `adb reverse tcp:3000 tcp:3000`
     if (Platform.isAndroid) {
-      return 'http://10.0.2.2:$port$basePath';
+      return 'http://127.0.0.1:$port$basePath';
     }
 
     // iOS simulator, macOS, Linux, Windows
