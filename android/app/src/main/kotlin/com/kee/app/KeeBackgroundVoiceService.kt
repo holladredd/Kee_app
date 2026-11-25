@@ -19,6 +19,11 @@ import android.view.*
 import android.widget.*
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONObject
+import org.vosk.Model
+import org.vosk.Recognizer
+import org.vosk.android.RecognitionListener as VoskRecognitionListener
+import org.vosk.android.SpeechService as VoskSpeechService
 import java.util.*
 
 class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
@@ -43,6 +48,14 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private var speechRecognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
+
+    // Offline single-mic Vosk wake-word engine (zero system chimes)
+    private var voskModel: Model? = null
+    private var voskSpeechService: VoskSpeechService? = null
+    @Volatile
+    private var isVoskLoading = false
+    @Volatile
+    private var isVoskListening = false
 
     private var isListeningForWakeWord = true
     private var isPaused = false
@@ -85,6 +98,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         createNotificationChannel()
         tts = TextToSpeech(this, this)
         initSpeechRecognizer()
+        initVoskWakeWord()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -94,12 +108,14 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         when (intent?.action) {
             ACTION_STOP_LISTENING -> {
                 mainHandler.removeCallbacks(restartRunnable)
+                stopVoskListening()
                 stopSelf()
                 return START_NOT_STICKY
             }
             ACTION_PAUSE_LISTENING -> {
                 isPaused = true
                 mainHandler.removeCallbacks(restartRunnable)
+                stopVoskListening()
                 mainHandler.post { speechRecognizer?.cancel() }
                 return START_STICKY
             }
@@ -191,8 +207,87 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
+    private fun initVoskWakeWord() {
+        if (voskModel != null || isVoskLoading) return
+        if (!KeeWakeWordModelManager.isModelReady(this)) return
+
+        isVoskLoading = true
+        Thread {
+            try {
+                val modelDir = KeeWakeWordModelManager.getModelDir(this)
+                val model = Model(modelDir.absolutePath)
+                voskModel = model
+                // Grammar-constrained recognizer: fast, low-CPU, minimal false triggers
+                val grammar = """["what's up kee", "whats up kee", "what's up k", "whats up k", "what up kee", "what up k", "hi kee", "hey kee", "hello kee", "ok kee", "hi k", "hey k", "ok k", "kee", "[unk]"]"""
+                val recognizer = Recognizer(model, 16000.0f, grammar)
+                voskSpeechService = VoskSpeechService(recognizer, 16000.0f)
+                isVoskLoading = false
+
+                if (isRunning && !isPaused && !isOverlayShowing && isListeningForWakeWord) {
+                    mainHandler.post { startWakeWordListening() }
+                }
+            } catch (e: Exception) {
+                isVoskLoading = false
+                e.printStackTrace()
+            }
+        }.start()
+    }
+
+    private val voskListener = object : VoskRecognitionListener {
+        override fun onPartialResult(hypothesis: String?) {
+            handleVoskHypothesis(hypothesis, false)
+        }
+
+        override fun onResult(hypothesis: String?) {
+            handleVoskHypothesis(hypothesis, true)
+        }
+
+        override fun onFinalResult(hypothesis: String?) {
+            handleVoskHypothesis(hypothesis, true)
+        }
+
+        override fun onError(exception: Exception?) {
+            isVoskListening = false
+        }
+
+        override fun onTimeout() {
+            isVoskListening = false
+        }
+    }
+
+    private fun handleVoskHypothesis(hypothesis: String?, isFinal: Boolean) {
+        if (!isListeningForWakeWord || isPaused || isOverlayShowing || hypothesis.isNullOrBlank()) return
+        try {
+            val json = JSONObject(hypothesis)
+            val raw = json.optString("partial", "").ifEmpty { json.optString("text", "") }
+            val cleaned = raw.replace("[unk]", "").trim().lowercase(Locale.ROOT)
+            if (cleaned.isEmpty()) return
+
+            for (wakeWord in wakeWords) {
+                val pattern = Regex("\\b${Regex.escape(wakeWord)}\\b")
+                if (pattern.containsMatchIn(cleaned)) {
+                    stopVoskListening()
+                    triggerWakeWordDetected(cleaned, wakeWord)
+                    return
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun stopVoskListening() {
+        try {
+            if (isVoskListening) {
+                voskSpeechService?.stop()
+                isVoskListening = false
+            }
+        } catch (_: Exception) {
+            isVoskListening = false
+        }
+    }
+
     private fun startWakeWordListening() {
-        if (isPaused || !isRunning) return
+        if (isPaused || !isRunning || isOverlayShowing) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             stopSelf()
             return
@@ -200,23 +295,21 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
         isListeningForWakeWord = true
         isProcessingRequest = false
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 10000L)
+
+        val service = voskSpeechService
+        if (service == null) {
+            if (!isVoskLoading && KeeWakeWordModelManager.isModelReady(this)) {
+                initVoskWakeWord()
+            }
+            return
         }
 
-        mainHandler.post {
-            if (isPaused || !isRunning) return@post
+        if (!isVoskListening) {
             try {
-                speechRecognizer?.startListening(intent)
+                isVoskListening = service.startListening(voskListener)
             } catch (e: Exception) {
-                restartListeningAfterDelay(3000)
+                isVoskListening = false
+                e.printStackTrace()
             }
         }
     }
@@ -571,6 +664,11 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         isRunning = false
         isPaused = true
         mainHandler.removeCallbacksAndMessages(null)
+        stopVoskListening()
+        try {
+            voskSpeechService?.shutdown()
+            voskModel?.close()
+        } catch (_: Exception) {}
         dismissOverlay()
         speechRecognizer?.destroy()
         tts?.shutdown()

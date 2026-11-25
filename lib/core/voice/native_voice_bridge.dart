@@ -16,6 +16,7 @@ final nativeVoiceBridgeProvider = Provider<NativeVoiceBridge>((ref) {
 class NativeVoiceBridge {
   static const MethodChannel _channel = MethodChannel('com.kee.app/voice_service');
   final Ref _ref;
+  void Function(int progress)? _onDownloadProgress;
 
   NativeVoiceBridge(this._ref);
 
@@ -31,6 +32,10 @@ class NativeVoiceBridge {
         if (route != null && route.isNotEmpty) {
           _ref.read(appRouterProvider).go(route);
         }
+        return true;
+      } else if (call.method == 'modelDownloadProgress') {
+        final progress = (call.arguments as Map?)?['progress'] as int? ?? 0;
+        _onDownloadProgress?.call(progress);
         return true;
       }
       return null;
@@ -126,6 +131,29 @@ class NativeVoiceBridge {
       return res ?? false;
     } catch (e) {
       return false;
+    }
+  }
+
+  Future<bool> isWakeWordModelReady() async {
+    if (kIsWeb || !Platform.isAndroid) return true;
+    try {
+      final res = await _channel.invokeMethod<bool>('isWakeWordModelReady');
+      return res ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> downloadWakeWordModel({
+    void Function(int progress)? onProgress,
+  }) async {
+    if (kIsWeb || !Platform.isAndroid) return true;
+    _onDownloadProgress = onProgress;
+    try {
+      final res = await _channel.invokeMethod<bool>('downloadWakeWordModel');
+      return res ?? false;
+    } finally {
+      _onDownloadProgress = null;
     }
   }
 }
