@@ -47,6 +47,25 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   }
 
   void _initializeServices() {
+    // Restore persisted hands-free preference on Android so user only enables it once
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      Future.microtask(() async {
+        try {
+          final bridge = ref.read(nativeVoiceBridgeProvider);
+          final wasEnabled = await bridge.getPersistedHandsFree();
+          if (wasEnabled) {
+            state = state.copyWith(isHandsFreeEnabled: true);
+            final running = await bridge.isServiceRunning();
+            if (!running) {
+              await bridge.startBackgroundListening();
+            }
+          }
+        } catch (e) {
+          debugPrint('[VoiceAssistantController] Restore hands-free error: $e');
+        }
+      });
+    }
+
     // Connect wake word activation handler
     _wakeWord.onWakeWordDetected = (phrase, trailingQuery) {
       handleWakeWordActivation(trailingQuery);

@@ -1,10 +1,14 @@
 package com.kee.app
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.provider.Settings
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -13,8 +17,21 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "com.kee.app/voice_service"
+    private val PREFS_NAME = "kee_voice_prefs"
+    private val KEY_HANDS_FREE = "is_hands_free_enabled"
     private var methodChannel: MethodChannel? = null
-    private var isHandsFreeEnabled = false
+
+    private fun isHandsFreeEnabled(): Boolean {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getBoolean(KEY_HANDS_FREE, false)
+    }
+
+    private fun setHandsFreeEnabled(enabled: Boolean) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HANDS_FREE, enabled)
+            .apply()
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -45,6 +62,9 @@ class MainActivity : FlutterActivity() {
                 "isServiceRunning" -> {
                     result.success(KeeBackgroundVoiceService.isRunning)
                 }
+                "getPersistedHandsFree" -> {
+                    result.success(isHandsFreeEnabled())
+                }
                 "isWakeWordModelReady" -> {
                     result.success(KeeWakeWordModelManager.isModelReady(this))
                 }
@@ -66,6 +86,14 @@ class MainActivity : FlutterActivity() {
                             }
                         }
                     )
+                }
+                "openApp" -> {
+                    val appName = call.argument<String>("appName") ?: ""
+                    result.success(openInstalledApp(appName))
+                }
+                "callContact" -> {
+                    val target = call.argument<String>("target") ?: ""
+                    result.success(callContactOrNumber(target))
                 }
                 else -> result.notImplemented()
             }
@@ -90,7 +118,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun startVoiceService() {
-        isHandsFreeEnabled = true
+        setHandsFreeEnabled(true)
         val serviceIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
             action = KeeBackgroundVoiceService.ACTION_START_LISTENING
         }
@@ -98,7 +126,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopVoiceService() {
-        isHandsFreeEnabled = false
+        setHandsFreeEnabled(false)
         val serviceIntent = Intent(this, KeeBackgroundVoiceService::class.java)
         stopService(serviceIntent)
     }
@@ -140,12 +168,127 @@ class MainActivity : FlutterActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // Only resume background wake-word detection when user explicitly enabled Hands-Free mode
-        if (isHandsFreeEnabled) {
+        // Resume background wake-word detection whenever user leaves Kee if enabled once
+        if (isHandsFreeEnabled()) {
             val resumeIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
                 action = KeeBackgroundVoiceService.ACTION_RESUME_LISTENING
             }
             ContextCompat.startForegroundService(this, resumeIntent)
         }
+    }
+
+    private fun openInstalledApp(rawName: String): Map<String, Any?> {
+        val query = rawName.trim().lowercase()
+        if (query.isEmpty()) {
+            return mapOf("success" to false, "message" to "Please tell me which app to open.")
+        }
+
+        // Handle common natural aliases like "phone book"
+        val normalizedTargets = when {
+            query.contains("phone book") || query.contains("phonebook") || query.contains("contacts") ->
+                listOf("contacts", "phone")
+            query.contains("dialer") -> listOf("phone", "dialer")
+            else -> listOf(query)
+        }
+
+        val pm = packageManager
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val apps = pm.queryIntentActivities(mainIntent, 0)
+
+        var bestPkg: String? = null
+        var bestLabel: String? = null
+
+        for (target in normalizedTargets) {
+            // 1. Exact label match
+            for (info in apps) {
+                val label = info.loadLabel(pm).toString()
+                if (label.lowercase() == target) {
+                    bestPkg = info.activityInfo.packageName
+                    bestLabel = label
+                    break
+                }
+            }
+            if (bestPkg != null) break
+
+            // 2. Partial label match
+            for (info in apps) {
+                val label = info.loadLabel(pm).toString()
+                if (label.lowercase().contains(target) || target.contains(label.lowercase())) {
+                    bestPkg = info.activityInfo.packageName
+                    bestLabel = label
+                    break
+                }
+            }
+            if (bestPkg != null) break
+        }
+
+        if (bestPkg != null) {
+            val launchIntent = pm.getLaunchIntentForPackage(bestPkg)?.apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (launchIntent != null) {
+                startActivity(launchIntent)
+                return mapOf("success" to true, "message" to "Opening $bestLabel.")
+            }
+        }
+
+        return mapOf("success" to false, "message" to "I couldn't find an app called \"$rawName\" on your device.")
+    }
+
+    private fun callContactOrNumber(rawTarget: String): Map<String, Any?> {
+        val target = rawTarget.trim()
+        if (target.isEmpty()) {
+            return mapOf("success" to false, "message" to "Who would you like me to call?")
+        }
+
+        val digitsOnly = target.replace(Regex("[^0-9+]"), "")
+        if (digitsOnly.length >= 3 && digitsOnly.count { it.isDigit() } == target.replace(Regex("[\\s\\-()+]"), "").length) {
+            return placeOrDialNumber(digitsOnly, target)
+        }
+
+        // Look up in phone book (Contacts)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.CALL_PHONE), 2001)
+            return mapOf(
+                "success" to false,
+                "message" to "Please allow Contacts permission so I can look up $target in your phone book, then ask me again."
+            )
+        }
+
+        val cursor = contentResolver.query(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.NUMBER
+            ),
+            "LOWER(${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME}) LIKE ?",
+            arrayOf("%${target.lowercase()}%"),
+            null
+        )
+
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val matchedName = it.getString(0) ?: target
+                val matchedNumber = it.getString(1) ?: ""
+                if (matchedNumber.isNotBlank()) {
+                    return placeOrDialNumber(matchedNumber, matchedName)
+                }
+            }
+        }
+
+        return mapOf("success" to false, "message" to "I couldn't find \"$target\" in your contacts.")
+    }
+
+    private fun placeOrDialNumber(number: String, displayName: String): Map<String, Any?> {
+        val hasCallPerm = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        val action = if (hasCallPerm) Intent.ACTION_CALL else Intent.ACTION_DIAL
+        val intent = Intent(action, Uri.parse("tel:${Uri.encode(number)}")).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(intent)
+        val verb = if (hasCallPerm) "Calling" else "Opening dialer for"
+        return mapOf("success" to true, "message" to "$verb $displayName.")
     }
 }

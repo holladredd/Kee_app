@@ -135,6 +135,16 @@ class NativeVoiceBridge {
     }
   }
 
+  Future<bool> getPersistedHandsFree() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final res = await _channel.invokeMethod<bool>('getPersistedHandsFree');
+      return res ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<bool> isWakeWordModelReady() async {
     if (kIsWeb || !Platform.isAndroid) return true;
     try {

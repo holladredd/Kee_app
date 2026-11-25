@@ -70,19 +70,33 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         }
     }
     private val wakeWords = listOf(
+        "what's up key",
         "what's up kee",
-        "whats up kee",
+        "what's up kay",
         "what's up k",
+        "whats up key",
+        "whats up kee",
+        "whats up kay",
         "whats up k",
+        "what up key",
         "what up kee",
+        "what up kay",
         "what up k",
+        "hi key",
         "hi kee",
+        "hey key",
         "hey kee",
+        "hello key",
         "hello kee",
+        "ok key",
         "ok kee",
+        "hi kay",
         "hi k",
+        "hey kay",
         "hey k",
+        "ok kay",
         "ok k",
+        "key",
         "kee"
     )
 
@@ -90,7 +104,9 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private var tvStatus: TextView? = null
     private var tvTranscript: TextView? = null
     private var orbView: View? = null
-    private var btnMic: ImageButton? = null
+    private var orbRingView: View? = null
+    private var btnActionMic: TextView? = null
+    private var overlayParams: WindowManager.LayoutParams? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -154,8 +170,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Kee Voice Assistant")
-            .setContentText("Listening for \"Hi Kee\" or \"What's up K\"")
+            .setContentTitle("Kee is running in background")
+            .setContentText("Say \"Hi Kee\" or \"What's up K\" anytime")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -217,8 +233,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 val modelDir = KeeWakeWordModelManager.getModelDir(this)
                 val model = Model(modelDir.absolutePath)
                 voskModel = model
-                // Grammar-constrained recognizer: fast, low-CPU, minimal false triggers
-                val grammar = """["what's up kee", "whats up kee", "what's up k", "whats up k", "what up kee", "what up k", "hi kee", "hey kee", "hello kee", "ok kee", "hi k", "hey k", "ok k", "kee", "[unk]"]"""
+                // Grammar-constrained recognizer using standard English lexicon words ("key"/"kay" + "kee"/"k")
+                val grammar = """["what's up key", "what's up kee", "what's up kay", "what's up k", "what up key", "what up kay", "hi key", "hi kee", "hey key", "hey kee", "hello key", "hello kee", "ok key", "ok kee", "hi kay", "hey kay", "ok kay", "key", "[unk]"]"""
                 val recognizer = Recognizer(model, 16000.0f, grammar)
                 voskSpeechService = VoskSpeechService(recognizer, 16000.0f)
                 isVoskLoading = false
@@ -366,7 +382,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun startListeningForUserQuery() {
         mainHandler.post {
-            tvStatus?.text = "Listening..."
+            updateOverlayState("Listening...", "#E8D0B2", "Speak")
             tvTranscript?.text = "Speak naturally..."
         }
 
@@ -390,7 +406,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         isProcessingRequest = true
 
         mainHandler.post {
-            tvStatus?.text = "Understanding..."
+            updateOverlayState("Understanding...", "#F59E0B", "Wait")
             speechRecognizer?.stopListening()
         }
 
@@ -415,13 +431,21 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         isProcessingRequest = false
         isSpeaking = true
 
-        tvStatus?.text = "Kee"
+        updateOverlayState("Kee Speaking", "#34D399", "Interrupt")
         tvTranscript?.text = reply
 
         // Speak reply using native Android TTS
         if (isTtsReady && tts != null) {
             tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "KEE_REPLY")
         }
+    }
+
+    private fun updateOverlayState(statusText: String, accentHex: String, micLabel: String) {
+        tvStatus?.text = statusText
+        btnActionMic?.text = micLabel
+        val color = Color.parseColor(accentHex)
+        (orbView?.background as? GradientDrawable)?.setColor(color)
+        (orbRingView?.background as? GradientDrawable)?.setStroke(3, Color.argb(110, Color.red(color), Color.green(color), Color.blue(color)))
     }
 
     private fun handleSpeechError(error: Int) {
@@ -446,11 +470,11 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         } else {
             if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                 mainHandler.post {
-                    tvStatus?.text = "Tap mic to speak"
+                    updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
                 }
             } else {
                 mainHandler.post {
-                    tvStatus?.text = "Notice: Tap to retry"
+                    updateOverlayState("Tap Speak to retry", "#EF4444", "Retry")
                 }
             }
         }
@@ -492,79 +516,151 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
+        val cardWidth = (resources.displayMetrics.widthPixels * 0.92f).toInt()
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
+            cardWidth,
             WindowManager.LayoutParams.WRAP_CONTENT,
             layoutParamsType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            y = 80
+            y = 72
         }
 
+        overlayParams = params
         overlayView = createOverlayView()
         windowManager?.addView(overlayView, params)
         isOverlayShowing = true
     }
 
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
     private fun createOverlayView(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(40, 32, 40, 32)
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#12100E"))
-                cornerRadius = 64f
-                setStroke(2, Color.parseColor("#383025"))
+            setPadding(dp(18), dp(14), dp(18), dp(16))
+            val bg = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.parseColor("#1B1714"), Color.parseColor("#110E0C"))
+            ).apply {
+                cornerRadius = dp(26).toFloat()
+                setStroke(dp(1), Color.parseColor("#473B2D"))
             }
             background = bg
-            elevation = 24f
+            elevation = dp(16).toFloat()
         }
 
-        // Header: Logo/Orb + Status Title + Actions (Open App, Close)
+        // Top drag handle bar
+        val dragPill = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(4)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                bottomMargin = dp(10)
+            }
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#4A3F32"))
+                cornerRadius = dp(2).toFloat()
+            }
+        }
+        root.addView(dragPill)
+
+        // Header: Glowing Orb + Status + Open Kee + Close
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        orbView = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(48, 48).apply {
-                marginEnd = 24
+        val orbContainer = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+                marginEnd = dp(10)
             }
-            val orbBg = GradientDrawable().apply {
+        }
+
+        orbRingView = View(this).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(34), dp(34), Gravity.CENTER)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.TRANSPARENT)
+                setStroke(3, Color.argb(110, 232, 208, 178))
+            }
+        }
+        orbContainer.addView(orbRingView)
+
+        orbView = View(this).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
+            background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor("#E8D0B2"))
             }
-            background = orbBg
         }
-        header.addView(orbView)
+        orbContainer.addView(orbView)
+        header.addView(orbContainer)
+
+        val titleCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val tvBrand = TextView(this).apply {
+            text = "Kee"
+            setTextColor(Color.parseColor("#F5EFE6"))
+            textSize = 13f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        titleCol.addView(tvBrand)
 
         tvStatus = TextView(this).apply {
             text = "Listening..."
-            setTextColor(Color.parseColor("#E8D0B2"))
-            textSize = 14f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        header.addView(tvStatus)
-
-        // Open App Button
-        val btnOpenApp = Button(this).apply {
-            text = "Open Kee"
+            setTextColor(Color.parseColor("#CBB89D"))
             textSize = 11f
-            setTextColor(Color.parseColor("#E8D0B2"))
-            val btnBg = GradientDrawable().apply {
-                setColor(Color.parseColor("#262018"))
-                cornerRadius = 32f
-                setStroke(1, Color.parseColor("#4A3F30"))
+        }
+        titleCol.addView(tvStatus)
+        header.addView(titleCol)
+
+        // Speak / Interrupt pill
+        btnActionMic = TextView(this).apply {
+            text = "Speak"
+            textSize = 11f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor("#12100E"))
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#E8D0B2"))
+                cornerRadius = dp(16).toFloat()
             }
-            background = btnBg
-            setPadding(24, 0, 24, 0)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                72
+                LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                marginEnd = 16
+                marginEnd = dp(8)
+            }
+            setOnClickListener {
+                tts?.stop()
+                isSpeaking = false
+                isProcessingRequest = false
+                startListeningForUserQuery()
+            }
+        }
+        header.addView(btnActionMic)
+
+        // Open App pill
+        val btnOpenApp = TextView(this).apply {
+            text = "Open"
+            textSize = 11f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(Color.parseColor("#E8D0B2"))
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#282119"))
+                cornerRadius = dp(16).toFloat()
+                setStroke(1, Color.parseColor("#544636"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dp(8)
             }
             setOnClickListener {
                 launchFullApp()
@@ -572,12 +668,17 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         }
         header.addView(btnOpenApp)
 
-        // Close/Dismiss Button
+        // Circular Close Button
         val btnClose = TextView(this).apply {
             text = "✕"
-            textSize = 18f
-            setTextColor(Color.parseColor("#A89E90"))
-            setPadding(16, 8, 16, 8)
+            textSize = 13f
+            setTextColor(Color.parseColor("#C2B5A3"))
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#241E18"))
+            }
             setOnClickListener {
                 dismissOverlay()
             }
@@ -590,18 +691,42 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         tvTranscript = TextView(this).apply {
             text = "Speak naturally..."
             setTextColor(Color.parseColor("#F5EFE6"))
-            textSize = 15f
-            setPadding(12, 24, 12, 16)
-            maxLines = 4
+            textSize = 14.5f
+            setLineSpacing(dp(2).toFloat(), 1.15f)
+            setPadding(dp(4), dp(12), dp(4), dp(4))
+            maxLines = 5
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
         root.addView(tvTranscript)
+
+        // Allow dragging the floating bubble vertically/horizontally
+        var initialY = 0
+        var initialTouchY = 0f
+        root.setOnTouchListener { _, event ->
+            val p = overlayParams ?: return@setOnTouchListener false
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialY = p.y
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dy = (initialTouchY - event.rawY).toInt()
+                    p.y = (initialY + dy).coerceIn(dp(24), resources.displayMetrics.heightPixels - dp(180))
+                    windowManager?.updateViewLayout(root, p)
+                    true
+                }
+                else -> false
+            }
+        }
 
         return root
     }
 
     private fun animateOrb(rmsdB: Float) {
-        val scale = (1.0f + (rmsdB / 15.0f).coerceIn(0f, 0.6f))
+        val scale = (1.0f + (rmsdB / 15.0f).coerceIn(0f, 0.5f))
         orbView?.animate()?.scaleX(scale)?.scaleY(scale)?.setDuration(80)?.start()
+        orbRingView?.animate()?.scaleX(scale * 1.15f)?.scaleY(scale * 1.15f)?.setDuration(80)?.start()
     }
 
     private fun launchFullApp() {

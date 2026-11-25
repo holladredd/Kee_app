@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../../core/constants/app_spacing.dart';
+import '../../../core/voice/native_voice_bridge.dart';
 import '../../../core/voice/voice_assistant_controller.dart';
 import '../../../core/voice/wake_word_service.dart';
 import '../../../core/widgets/kee_logo.dart';
