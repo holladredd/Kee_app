@@ -1,8 +1,10 @@
 package com.kee.app
 
+import android.Manifest
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
@@ -16,6 +18,7 @@ import android.speech.tts.UtteranceProgressListener
 import android.view.*
 import android.widget.*
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import java.util.*
 
 class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
@@ -25,6 +28,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         const val NOTIFICATION_ID = 9001
         const val ACTION_START_LISTENING = "com.kee.app.START_LISTENING"
         const val ACTION_STOP_LISTENING = "com.kee.app.STOP_LISTENING"
+        const val ACTION_PAUSE_LISTENING = "com.kee.app.PAUSE_LISTENING"
+        const val ACTION_RESUME_LISTENING = "com.kee.app.RESUME_LISTENING"
 
         var isRunning = false
         var isOverlayShowing = false
@@ -40,10 +45,17 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private var isTtsReady = false
 
     private var isListeningForWakeWord = true
+    private var isPaused = false
     private var isProcessingRequest = false
     private var isSpeaking = false
+    private var consecutiveErrors = 0
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val restartRunnable = Runnable {
+        if (isRunning && !isPaused && !isProcessingRequest && !isSpeaking && !isOverlayShowing) {
+            startWakeWordListening()
+        }
+    }
     private val wakeWords = listOf(
         "what's up kee",
         "whats up kee",
@@ -79,7 +91,25 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         val notification = buildForegroundNotification()
         startForeground(NOTIFICATION_ID, notification)
 
-        startWakeWordListening()
+        when (intent?.action) {
+            ACTION_STOP_LISTENING -> {
+                mainHandler.removeCallbacks(restartRunnable)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_PAUSE_LISTENING -> {
+                isPaused = true
+                mainHandler.removeCallbacks(restartRunnable)
+                mainHandler.post { speechRecognizer?.cancel() }
+                return START_STICKY
+            }
+            ACTION_RESUME_LISTENING, ACTION_START_LISTENING, null -> {
+                isPaused = false
+                consecutiveErrors = 0
+                startWakeWordListening()
+                return START_STICKY
+            }
+        }
         return START_STICKY
     }
 
@@ -109,7 +139,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Kee Voice Assistant")
-            .setContentText("Listening for \"Hi Kee\"")
+            .setContentText("Listening for \"Hi Kee\" or \"What's up K\"")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -123,7 +153,9 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 if (SpeechRecognizer.isRecognitionAvailable(this)) {
                     speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
                     speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-                        override fun onReadyForSpeech(params: Bundle?) {}
+                        override fun onReadyForSpeech(params: Bundle?) {
+                            consecutiveErrors = 0
+                        }
                         override fun onBeginningOfSpeech() {}
                         override fun onRmsChanged(rmsdB: Float) {
                             if (isOverlayShowing) {
@@ -136,11 +168,12 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                             handleSpeechError(error)
                         }
                         override fun onResults(results: Bundle?) {
+                            consecutiveErrors = 0
                             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             if (!matches.isNullOrEmpty()) {
                                 handleSpeechText(matches[0], true)
                             } else {
-                                restartListeningAfterDelay(300)
+                                restartListeningAfterDelay(1000)
                             }
                         }
                         override fun onPartialResults(partialResults: Bundle?) {
@@ -159,6 +192,12 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun startWakeWordListening() {
+        if (isPaused || !isRunning) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            stopSelf()
+            return
+        }
+
         isListeningForWakeWord = true
         isProcessingRequest = false
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -166,13 +205,18 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 5000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 10000L)
         }
 
         mainHandler.post {
+            if (isPaused || !isRunning) return@post
             try {
                 speechRecognizer?.startListening(intent)
             } catch (e: Exception) {
-                restartListeningAfterDelay(1000)
+                restartListeningAfterDelay(3000)
             }
         }
     }
@@ -288,9 +332,24 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun handleSpeechError(error: Int) {
+        if (isPaused || !isRunning) return
+
+        if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+            stopSelf()
+            return
+        }
+
         if (isListeningForWakeWord) {
-            // Harmless silence or timeout in background loop: silently restart
-            restartListeningAfterDelay(500)
+            if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                // Normal silence timeout — wait 1.5s before next window instead of hammering mic every 500ms
+                consecutiveErrors = 0
+                restartListeningAfterDelay(1500)
+            } else {
+                // Busy / audio / network error — exponential backoff (2s, 4s, 8s, max 15s)
+                consecutiveErrors++
+                val backoffMs = (2000L * (1 shl consecutiveErrors.coerceAtMost(3))).coerceAtMost(15000L)
+                restartListeningAfterDelay(backoffMs)
+            }
         } else {
             if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                 mainHandler.post {
@@ -305,11 +364,10 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun restartListeningAfterDelay(delayMs: Long) {
-        mainHandler.postDelayed({
-            if (isRunning && !isProcessingRequest && !isSpeaking) {
-                startWakeWordListening()
-            }
-        }, delayMs)
+        mainHandler.removeCallbacks(restartRunnable)
+        if (!isPaused && isRunning) {
+            mainHandler.postDelayed(restartRunnable, delayMs)
+        }
     }
 
     private fun vibratePhone() {
@@ -511,6 +569,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
     override fun onDestroy() {
         isRunning = false
+        isPaused = true
+        mainHandler.removeCallbacksAndMessages(null)
         dismissOverlay()
         speechRecognizer?.destroy()
         tts?.shutdown()

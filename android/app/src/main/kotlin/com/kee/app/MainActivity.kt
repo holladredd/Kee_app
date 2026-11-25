@@ -14,6 +14,7 @@ class MainActivity : FlutterActivity() {
 
     private val CHANNEL = "com.kee.app/voice_service"
     private var methodChannel: MethodChannel? = null
+    private var isHandsFreeEnabled = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -67,6 +68,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun startVoiceService() {
+        isHandsFreeEnabled = true
         val serviceIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
             action = KeeBackgroundVoiceService.ACTION_START_LISTENING
         }
@@ -74,6 +76,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun stopVoiceService() {
+        isHandsFreeEnabled = false
         val serviceIntent = Intent(this, KeeBackgroundVoiceService::class.java)
         stopService(serviceIntent)
     }
@@ -90,11 +93,13 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        // If Kee is in the foreground, dismiss any active floating overlay
-        // so the user interacts directly through Kee's full interface
-        if (KeeBackgroundVoiceService.isOverlayShowing) {
-            stopVoiceService()
-            startVoiceService()
+        // While Kee is in the foreground, pause background wake-word mic access
+        // so it doesn't collide with Kee's in-app voice assistant or spam the mic
+        if (KeeBackgroundVoiceService.isRunning) {
+            val pauseIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
+                action = KeeBackgroundVoiceService.ACTION_PAUSE_LISTENING
+            }
+            startService(pauseIntent)
         }
     }
 
@@ -113,9 +118,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // User pressed Home — start background wake-word detection if not running
-        if (!KeeBackgroundVoiceService.isRunning) {
-            startVoiceService()
+        // Only resume background wake-word detection when user explicitly enabled Hands-Free mode
+        if (isHandsFreeEnabled) {
+            val resumeIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
+                action = KeeBackgroundVoiceService.ACTION_RESUME_LISTENING
+            }
+            ContextCompat.startForegroundService(this, resumeIntent)
         }
     }
 }
