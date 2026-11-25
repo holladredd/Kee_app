@@ -45,6 +45,28 @@ class MainActivity : FlutterActivity() {
                 "isServiceRunning" -> {
                     result.success(KeeBackgroundVoiceService.isRunning)
                 }
+                "isWakeWordModelReady" -> {
+                    result.success(KeeWakeWordModelManager.isModelReady(this))
+                }
+                "downloadWakeWordModel" -> {
+                    KeeWakeWordModelManager.downloadAndExtract(
+                        context = this,
+                        onProgress = { pct ->
+                            runOnUiThread {
+                                methodChannel?.invokeMethod("modelDownloadProgress", mapOf("progress" to pct))
+                            }
+                        },
+                        onComplete = { success, errorMsg ->
+                            runOnUiThread {
+                                if (success) {
+                                    result.success(true)
+                                } else {
+                                    result.error("DOWNLOAD_FAILED", errorMsg ?: "Failed to download model", null)
+                                }
+                            }
+                        }
+                    )
+                }
                 else -> result.notImplemented()
             }
         }
