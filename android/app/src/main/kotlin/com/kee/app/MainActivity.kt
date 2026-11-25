@@ -93,8 +93,29 @@ class MainActivity : FlutterActivity() {
         // If Kee is in the foreground, dismiss any active floating overlay
         // so the user interacts directly through Kee's full interface
         if (KeeBackgroundVoiceService.isOverlayShowing) {
-            val serviceIntent = Intent(this, KeeBackgroundVoiceService::class.java)
-            // Service handles in-app suppression automatically
+            stopVoiceService()
+            startVoiceService()
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // When launched from floating overlay "Open Kee" button,
+        // navigate to /ask-kee via Flutter's deep-link mechanism
+        val route = intent.getStringExtra("route")
+        if (route != null) {
+            mainHandler.postDelayed({
+                methodChannel?.invokeMethod("navigateTo", mapOf("route" to route))
+            }, 300)
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // User pressed Home — start background wake-word detection if not running
+        if (!KeeBackgroundVoiceService.isRunning) {
+            startVoiceService()
         }
     }
 }

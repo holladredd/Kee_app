@@ -5,6 +5,7 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'core/navigation/app_router.dart';
 import 'core/notifications/notification_service.dart';
+import 'core/voice/native_voice_bridge.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,10 @@ class KeeApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Keep background walker pipeline active across the entire application
     ref.watch(backgroundWalkerProvider);
+
+    // Register the MethodChannel handler so the native background voice
+    // service can route queries through Kee's conversation engine
+    ref.watch(nativeVoiceBridgeProvider);
 
     final themeMode = ref.watch(themeModeProvider);
     final router = ref.watch(appRouterProvider);
