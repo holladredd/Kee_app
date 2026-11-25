@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../intelligence/conversation_provider.dart';
 import '../intelligence/unified_chat_provider.dart';
+import '../navigation/app_router.dart';
 import '../sync/background_walker_pipeline.dart';
 
 final nativeVoiceBridgeProvider = Provider<NativeVoiceBridge>((ref) {
@@ -25,6 +26,12 @@ class NativeVoiceBridge {
       if (call.method == 'processQuery') {
         final query = (call.arguments as Map?)?['query'] as String? ?? '';
         return await _handleBackgroundQuery(query);
+      } else if (call.method == 'navigateTo') {
+        final route = (call.arguments as Map?)?['route'] as String?;
+        if (route != null && route.isNotEmpty) {
+          _ref.read(appRouterProvider).go(route);
+        }
+        return true;
       }
       return null;
     });

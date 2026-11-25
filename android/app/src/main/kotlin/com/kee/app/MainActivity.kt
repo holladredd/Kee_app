@@ -105,7 +105,7 @@ class MainActivity : FlutterActivity() {
         // navigate to /ask-kee via Flutter's deep-link mechanism
         val route = intent.getStringExtra("route")
         if (route != null) {
-            mainHandler.postDelayed({
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 methodChannel?.invokeMethod("navigateTo", mapOf("route" to route))
             }, 300)
         }

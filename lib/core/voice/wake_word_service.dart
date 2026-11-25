@@ -24,10 +24,19 @@ class WakeWordService {
   Function(String matchedPhrase, String? immediateQuery)? onWakeWordDetected;
 
   static const List<String> _wakeWords = [
+    "what's up kee",
+    'whats up kee',
+    "what's up k",
+    'whats up k',
+    'what up kee',
+    'what up k',
     'hi kee',
     'hey kee',
     'hello kee',
     'ok kee',
+    'hi k',
+    'hey k',
+    'ok k',
     'kee',
   ];
 

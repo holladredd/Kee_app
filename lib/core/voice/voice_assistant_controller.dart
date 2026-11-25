@@ -313,18 +313,26 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   /// Toggle hands-free wake word detection
   Future<void> toggleHandsFree(bool enabled) async {
     state = state.copyWith(isHandsFreeEnabled: enabled);
-    await _wakeWord.setEnabled(enabled);
 
     try {
       final bridge = ref.read(nativeVoiceBridgeProvider);
-      if (enabled) {
-        await bridge.startBackgroundListening();
-      } else {
-        await bridge.stopBackgroundListening();
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        // On Android, the native KeeBackgroundVoiceService handles wake-word
+        // detection and floating overlay; skip Dart-side WakeWordService to
+        // avoid microphone collision.
+        await _wakeWord.setEnabled(false);
+        if (enabled) {
+          await bridge.startBackgroundListening();
+        } else {
+          await bridge.stopBackgroundListening();
+        }
+        return;
       }
     } catch (e) {
       debugPrint('[VoiceAssistantController] Native background toggle error: $e');
     }
+
+    await _wakeWord.setEnabled(enabled);
   }
 
   /// Set speech rate (0.1 to 1.0)

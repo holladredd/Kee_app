@@ -44,7 +44,22 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private var isSpeaking = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val wakeWords = listOf("hi kee", "hey kee", "hello kee", "ok kee", "kee")
+    private val wakeWords = listOf(
+        "what's up kee",
+        "whats up kee",
+        "what's up k",
+        "whats up k",
+        "what up kee",
+        "what up k",
+        "hi kee",
+        "hey kee",
+        "hello kee",
+        "ok kee",
+        "hi k",
+        "hey k",
+        "ok k",
+        "kee"
+    )
 
     // UI elements in floating overlay
     private var tvStatus: TextView? = null
@@ -163,12 +178,13 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun handleSpeechText(text: String, isFinal: Boolean) {
-        val lower = text.trim().toLowerCase(Locale.ROOT)
+        val lower = text.trim().lowercase(Locale.ROOT)
 
         if (isListeningForWakeWord) {
-            // Check for wake words: "Hi Kee", "Hey Kee", etc.
+            // Check for wake words: "Hi Kee", "What's up K", etc. using word boundaries
             for (wakeWord in wakeWords) {
-                if (lower.contains(wakeWord)) {
+                val pattern = Regex("\\b${Regex.escape(wakeWord)}\\b")
+                if (pattern.containsMatchIn(lower)) {
                     triggerWakeWordDetected(text, wakeWord)
                     return
                 }
@@ -200,7 +216,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         }
 
         // Check if user spoke query in the same breath (e.g. "Hi Kee remind me to call David")
-        val lower = fullText.toLowerCase(Locale.ROOT)
+        val lower = fullText.lowercase(Locale.ROOT)
         val idx = lower.indexOf(matchedWakeWord)
         val trailing = fullText.substring(idx + matchedWakeWord.length).trim()
 

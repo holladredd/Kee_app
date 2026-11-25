@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../core/constants/app_spacing.dart';
 import '../../../core/intelligence/unified_chat_provider.dart';
 import '../../../core/voice/assistant_state.dart';
+import '../../../core/voice/native_voice_bridge.dart';
 import '../../../core/voice/voice_assistant_controller.dart';
 import '../../../core/widgets/kee_logo.dart';
 import '../../../core/widgets/kee_voice_orb.dart';
@@ -151,7 +153,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
               ),
               tooltip: assistant.isHandsFreeEnabled ? 'Wake Word Active ("Hi Kee")' : 'Hands-Free Disabled',
               onPressed: () {
-                safeVoiceCtrl.toggleHandsFree(!assistant.isHandsFreeEnabled);
+                _toggleHandsFreeWithOnboarding(safeVoiceCtrl, !assistant.isHandsFreeEnabled);
               },
             ),
           IconButton(
@@ -523,7 +525,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                       tooltip: assistant.isHandsFreeEnabled ? 'Hands-Free: Say "Hi Kee"' : 'Tap to toggle hands-free',
                       onPressed: () {
                         if (safeVoiceCtrl != null) {
-                          safeVoiceCtrl.toggleHandsFree(!assistant.isHandsFreeEnabled);
+                          _toggleHandsFreeWithOnboarding(safeVoiceCtrl, !assistant.isHandsFreeEnabled);
                         }
                       },
                     ),
@@ -534,6 +536,39 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _toggleHandsFreeWithOnboarding(
+    VoiceAssistantController voiceCtrl,
+    bool enable,
+  ) async {
+    if (enable && !kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      final bridge = ref.read(nativeVoiceBridgeProvider);
+      final hasOverlay = await bridge.isOverlayPermissionGranted();
+      if (!hasOverlay && mounted) {
+        final shouldRequest = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Enable Floating Assistant'),
+            content: const Text(
+              'To summon Kee with "Hi Kee" while using other apps, Kee needs permission to display a compact floating assistant widget over other apps.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Not Now'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Grant Permission'),
+              ),
+            ],
+          ),
+        );
+        if (shouldRequest != true) return;
+      }
+    }
+    await voiceCtrl.toggleHandsFree(enable);
   }
 
   String _getVoiceStatusText(VoiceAssistantState assistant) {

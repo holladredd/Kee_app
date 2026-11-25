@@ -72,7 +72,11 @@ class KeeConversationEngine {
 
     // ─── 0. STRIP LEADING WAKE PHRASES & CONVERSATIONAL ADDRESSES ───
     // e.g. "Hi Kee, remember that I prefer coffee" -> "remember that I prefer coffee"
-    final wakeMatch = RegExp(r'^(hi|hey|hello|ok|okay)?\s*kee[,\s!]*', caseSensitive: false).firstMatch(text);
+    // e.g. "What's up K, remind me to call John" -> "remind me to call John"
+    final wakeMatch = RegExp(
+      r'^(?:(?:hi|hey|hello|ok|okay|what\x27?s\s+up|whats\s+up|what\s+up)\s+(?:kee|k)|(?:hi|hey|hello|ok|okay)?\s*kee)\b[,\s!]*',
+      caseSensitive: false,
+    ).firstMatch(text);
     if (wakeMatch != null) {
       text = text.substring(wakeMatch.end).trim();
     }
