@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../intelligence/conversation_provider.dart';
 import '../intelligence/unified_chat_provider.dart';
 import 'assistant_state.dart';
+import 'native_voice_bridge.dart';
 import 'speech_recognition_service.dart';
 import 'text_to_speech_service.dart';
 import 'wake_word_service.dart';
@@ -313,6 +314,17 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   Future<void> toggleHandsFree(bool enabled) async {
     state = state.copyWith(isHandsFreeEnabled: enabled);
     await _wakeWord.setEnabled(enabled);
+
+    try {
+      final bridge = ref.read(nativeVoiceBridgeProvider);
+      if (enabled) {
+        await bridge.startBackgroundListening();
+      } else {
+        await bridge.stopBackgroundListening();
+      }
+    } catch (e) {
+      debugPrint('[VoiceAssistantController] Native background toggle error: $e');
+    }
   }
 
   /// Set speech rate (0.1 to 1.0)
