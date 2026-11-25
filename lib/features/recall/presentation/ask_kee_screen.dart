@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -133,7 +132,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                   ),
                 ),
                 Text(
-                  assistant.isHandsFreeEnabled ? 'Hands-Free Active ("Hi Kee")' : 'Your Memory. Extended.',
+                  assistant.isHandsFreeEnabled ? 'Hands-Free ("Hi Kee" / "What\'s up K")' : 'Your Memory. Extended.',
                   style: TextStyle(
                     fontSize: 10,
                     letterSpacing: 0.5,
@@ -151,7 +150,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                 assistant.isHandsFreeEnabled ? Icons.hearing_rounded : Icons.hearing_disabled_rounded,
                 color: assistant.isHandsFreeEnabled ? accentColor : theme.colorScheme.onSurfaceVariant,
               ),
-              tooltip: assistant.isHandsFreeEnabled ? 'Wake Word Active ("Hi Kee")' : 'Hands-Free Disabled',
+              tooltip: assistant.isHandsFreeEnabled ? 'Wake Word Active ("Hi Kee" / "What\'s up K")' : 'Hands-Free Disabled',
               onPressed: () {
                 _toggleHandsFreeWithOnboarding(safeVoiceCtrl, !assistant.isHandsFreeEnabled);
               },
@@ -522,7 +521,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
                         Icons.voice_chat_rounded,
                         color: assistant.isHandsFreeEnabled ? accentColor : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                       ),
-                      tooltip: assistant.isHandsFreeEnabled ? 'Hands-Free: Say "Hi Kee"' : 'Tap to toggle hands-free',
+                      tooltip: assistant.isHandsFreeEnabled ? 'Hands-Free: "Hi Kee" / "What\'s up K"' : 'Tap to toggle hands-free',
                       onPressed: () {
                         if (safeVoiceCtrl != null) {
                           _toggleHandsFreeWithOnboarding(safeVoiceCtrl, !assistant.isHandsFreeEnabled);
@@ -542,92 +541,9 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
     VoiceAssistantController voiceCtrl,
     bool enable,
   ) async {
-    if (enable && !kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      final bridge = ref.read(nativeVoiceBridgeProvider);
-
-      // 1. Download offline wake-word model once if not yet present
-      final modelReady = await bridge.isWakeWordModelReady();
-      if (!modelReady && mounted) {
-        final progressNotifier = ValueNotifier<int>(0);
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Setting Up Hands-Free'),
-            content: ValueListenableBuilder<int>(
-              valueListenable: progressNotifier,
-              builder: (_, pct, __) => Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Downloading offline wake-word model (~40 MB) once so Kee listens silently without chimes...',
-                  ),
-                  const SizedBox(height: 16),
-                  LinearProgressIndicator(value: pct > 0 ? pct / 100.0 : null),
-                  const SizedBox(height: 8),
-                  Text('$pct%', style: Theme.of(ctx).textTheme.bodySmall),
-                ],
-              ),
-            ),
-          ),
-        );
-
-        bool downloaded = false;
-        String? errorMsg;
-        try {
-          downloaded = await bridge.downloadWakeWordModel(
-            onProgress: (pct) => progressNotifier.value = pct,
-          );
-        } catch (e) {
-          errorMsg = e.toString();
-        } finally {
-          progressNotifier.dispose();
-          if (mounted) {
-            Navigator.of(context, rootNavigator: true).pop();
-          }
-        }
-
-        if (!downloaded) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  errorMsg != null
-                      ? 'Could not download wake-word model: $errorMsg'
-                      : 'Could not download wake-word model. Check your internet connection.',
-                ),
-              ),
-            );
-          }
-          return;
-        }
-      }
-
-      // 2. Request overlay permission if not yet granted
-      final hasOverlay = await bridge.isOverlayPermissionGranted();
-      if (!hasOverlay && mounted) {
-        final shouldRequest = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Enable Floating Assistant'),
-            content: const Text(
-              'To summon Kee with "Hi Kee" or "What\'s up K" while using other apps, Kee needs permission to display a compact floating assistant widget over other apps.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: const Text('Not Now'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text('Grant Permission'),
-              ),
-            ],
-          ),
-        );
-        if (shouldRequest != true) return;
-      }
+    if (enable) {
+      final ready = await ref.read(nativeVoiceBridgeProvider).ensureHandsFreeReady(context);
+      if (!ready) return;
     }
     await voiceCtrl.toggleHandsFree(enable);
   }
@@ -645,7 +561,7 @@ class _AskKeeScreenState extends ConsumerState<AskKeeScreen> {
       case AssistantState.error:
         return assistant.errorMessage ?? 'Voice notice (tap to retry)';
       case AssistantState.idle:
-        return 'Ready. Say "Hi Kee" or tap to speak';
+        return 'Ready. Say "Hi Kee", "What\'s up K", or tap to speak';
     }
   }
 

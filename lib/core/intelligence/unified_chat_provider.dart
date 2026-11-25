@@ -131,7 +131,7 @@ class UnifiedChatNotifier extends Notifier<List<ChatMessage>> {
   void clearChat() {
     state = [
       ChatMessage(
-        text: 'Conversation cleared. Say "Hi Kee" or tap to talk naturally.',
+        text: 'Conversation cleared. Say "Hi Kee", "What\'s up K", or tap to talk naturally.',
         isUser: false,
         timestamp: DateTime.now(),
       ),

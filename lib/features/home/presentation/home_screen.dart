@@ -177,7 +177,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _buildMenuItem(
                   icon: Icons.settings_outlined,
                   title: 'Settings & Voice',
-                  subtitle: 'Hands-free "Hi Kee", theme & sound',
+                  subtitle: 'Hands-free "Hi Kee" / "What\'s up K", theme & sound',
                   color: accentColor,
                   onTap: () {
                     Navigator.pop(ctx);
@@ -429,7 +429,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Text(
-                                            (voiceState?.isHandsFreeEnabled ?? false) ? '"Hi Kee"' : 'AI Chat',
+                                            (voiceState?.isHandsFreeEnabled ?? false) ? '"Hi Kee" / "What\'s up K"' : 'AI Chat',
                                             style: TextStyle(
                                               fontSize: 10,
                                               fontWeight: FontWeight.w600,

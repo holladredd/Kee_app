@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../intelligence/conversation_provider.dart';
@@ -155,5 +156,95 @@ class NativeVoiceBridge {
     } finally {
       _onDownloadProgress = null;
     }
+  }
+
+  /// Ensures the offline Vosk wake-word model is downloaded and overlay
+  /// permission is explained/granted before enabling Hands-Free mode on Android.
+  Future<bool> ensureHandsFreeReady(BuildContext context) async {
+    if (kIsWeb || !Platform.isAndroid) return true;
+
+    final modelReady = await isWakeWordModelReady();
+    if (!modelReady && context.mounted) {
+      final progressNotifier = ValueNotifier<int>(0);
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Setting Up Hands-Free'),
+          content: ValueListenableBuilder<int>(
+            valueListenable: progressNotifier,
+            builder: (ctx, pct, child) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Downloading offline wake-word model (~40 MB) once so Kee listens silently without chimes...',
+                ),
+                const SizedBox(height: 16),
+                LinearProgressIndicator(value: pct > 0 ? pct / 100.0 : null),
+                const SizedBox(height: 8),
+                Text('$pct%', style: Theme.of(ctx).textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      bool downloaded = false;
+      String? errorMsg;
+      try {
+        downloaded = await downloadWakeWordModel(
+          onProgress: (pct) => progressNotifier.value = pct,
+        );
+      } catch (e) {
+        errorMsg = e.toString();
+      } finally {
+        progressNotifier.dispose();
+        if (context.mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
+        }
+      }
+
+      if (!downloaded) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                errorMsg != null
+                    ? 'Could not download wake-word model: $errorMsg'
+                    : 'Could not download wake-word model. Check your internet connection.',
+              ),
+            ),
+          );
+        }
+        return false;
+      }
+    }
+
+    final hasOverlay = await isOverlayPermissionGranted();
+    if (!hasOverlay && context.mounted) {
+      final shouldRequest = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Enable Floating Assistant'),
+          content: const Text(
+            'To summon Kee with "Hi Kee" or "What\'s up K" while using other apps, Kee needs permission to display a compact floating assistant widget over other apps.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Not Now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Grant Permission'),
+            ),
+          ],
+        ),
+      );
+      if (shouldRequest != true) return false;
+    }
+
+    return true;
   }
 }

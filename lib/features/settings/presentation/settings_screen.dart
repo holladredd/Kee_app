@@ -51,11 +51,15 @@ class SettingsScreen extends ConsumerWidget {
                     assistant.isHandsFreeEnabled ? Icons.mic_rounded : Icons.mic_off_rounded,
                     color: assistant.isHandsFreeEnabled ? accentColor : null,
                   ),
-                  title: const Text('Wake Word ("Hi Kee")'),
-                  subtitle: const Text('Wake up Kee hands-free by saying "Hi Kee" or "Hey Kee"'),
+                  title: const Text('Wake Word ("Hi Kee" / "What\'s up K")'),
+                  subtitle: const Text('Wake up Kee hands-free by saying "Hi Kee" or "What\'s up K"'),
                   value: assistant.isHandsFreeEnabled,
-                  onChanged: (val) {
-                    voiceCtrl.toggleHandsFree(val);
+                  onChanged: (val) async {
+                    if (val) {
+                      final ready = await ref.read(nativeVoiceBridgeProvider).ensureHandsFreeReady(context);
+                      if (!ready) return;
+                    }
+                    await voiceCtrl.toggleHandsFree(val);
                   },
                 ),
                 if (assistant.isHandsFreeEnabled) ...[
@@ -77,7 +81,7 @@ class SettingsScreen extends ConsumerWidget {
                         _buildListeningModeOption(
                           context: context,
                           title: 'In-App Only (Recommended)',
-                          subtitle: 'Listens for "Hi Kee" while the app is active. Highly battery-efficient.',
+                          subtitle: 'Listens for "Hi Kee" or "What\'s up K" while the app is active. Highly battery-efficient.',
                           isSelected: wakeWord.listeningMode == WakeWordListeningMode.inAppOnly,
                           accentColor: accentColor,
                           isDark: isDark,
