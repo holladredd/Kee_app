@@ -71,6 +71,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private var isProcessingRequest = false
     private var isSpeaking = false
     private var isOverlayCapturingSpeech = false
+    private var isSpeechRecognizerActive = false
     private var consecutiveErrors = 0
     private var lastWakeActivationMs = 0L
     private val wakeCooldownMs = 2500L
@@ -227,6 +228,9 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private fun initSpeechRecognizer() {
         mainHandler.post {
             try {
+                speechRecognizer?.destroy()
+                speechRecognizer = null
+                isSpeechRecognizerActive = false
                 if (SpeechRecognizer.isRecognitionAvailable(this)) {
                     speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
                     speechRecognizer?.setRecognitionListener(object : RecognitionListener {
@@ -242,10 +246,12 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                         override fun onBufferReceived(buffer: ByteArray?) {}
                         override fun onEndOfSpeech() {}
                         override fun onError(error: Int) {
+                            isSpeechRecognizerActive = false
                             handleSpeechError(error)
                         }
                         override fun onResults(results: Bundle?) {
                             consecutiveErrors = 0
+                            isSpeechRecognizerActive = false
                             isOverlayCapturingSpeech = false
                             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             if (!matches.isNullOrEmpty()) {
@@ -262,9 +268,11 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                         }
                         override fun onEvent(eventType: Int, params: Bundle?) {}
                     })
+                } else {
+                    Log.e("KeeVoiceService", "SpeechRecognizer.isRecognitionAvailable returned false")
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e("KeeVoiceService", "initSpeechRecognizer failed: ${e.message}", e)
             }
         }
     }
@@ -448,7 +456,6 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
         isListeningForWakeWord = false
         mainHandler.post {
-            speechRecognizer?.stopListening()
             showFloatingOverlay()
         }
 
@@ -482,6 +489,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
         }
 
         mainHandler.postDelayed({
@@ -489,13 +497,34 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 isOverlayCapturingSpeech = false
                 return@postDelayed
             }
+            if (speechRecognizer == null) {
+                initSpeechRecognizer()
+                mainHandler.postDelayed({
+                    if (!isRunning || !isOverlayShowing || isPaused) return@postDelayed
+                    try {
+                        isSpeechRecognizerActive = true
+                        speechRecognizer?.startListening(intent)
+                    } catch (e: Exception) {
+                        isSpeechRecognizerActive = false
+                        isOverlayCapturingSpeech = false
+                        Log.e("KeeVoiceService", "startListening retry failed: ${e.message}", e)
+                    }
+                }, 150)
+                return@postDelayed
+            }
             try {
+                if (isSpeechRecognizerActive) {
+                    speechRecognizer?.cancel()
+                    isSpeechRecognizerActive = false
+                }
+                isSpeechRecognizerActive = true
                 speechRecognizer?.startListening(intent)
             } catch (e: Exception) {
+                isSpeechRecognizerActive = false
                 isOverlayCapturingSpeech = false
-                e.printStackTrace()
+                Log.e("KeeVoiceService", "startListening failed: ${e.message}", e)
             }
-        }, 300)
+        }, 350)
     }
 
     private fun retryLastRequest() {
@@ -529,7 +558,10 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             userRow?.visibility = View.VISIBLE
             tvUserTranscript?.text = "\"$query\""
             keeRow?.visibility = View.GONE
-            speechRecognizer?.stopListening()
+            if (isSpeechRecognizerActive) {
+                speechRecognizer?.stopListening()
+                isSpeechRecognizerActive = false
+            }
         }
 
         // Delegate query to Flutter's KeeConversationEngine if alive
@@ -633,6 +665,11 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         } else {
             isOverlayCapturingSpeech = false
             lastFailureWasSpeech = true
+            Log.w("KeeVoiceService", "Overlay SpeechRecognizer error code=$error")
+            if (error == SpeechRecognizer.ERROR_CLIENT || error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) {
+                // Recreate recognizer cleanly so Retry starts with a fresh instance
+                initSpeechRecognizer()
+            }
             mainHandler.post {
                 if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                     orbAnimView?.setState(OrbState.ERROR)
@@ -642,10 +679,20 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                     tvKeeResponse?.setTextColor(Color.parseColor("#D8D2C5"))
                     btnRetry?.visibility = View.VISIBLE
                 } else {
+                    val reason = when (error) {
+                        SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT ->
+                            "Network error during speech recognition. Tap Retry."
+                        SpeechRecognizer.ERROR_AUDIO ->
+                            "Microphone audio error. Tap Retry."
+                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY ->
+                            "Speech service was busy. Tap Retry."
+                        else ->
+                            "Speech recognition failed (code $error). Tap Retry."
+                    }
                     orbAnimView?.setState(OrbState.ERROR)
                     updateOverlayState("Voice error", "Speak")
                     keeRow?.visibility = View.VISIBLE
-                    tvKeeResponse?.text = "Speech recognition failed. Tap Retry to try again."
+                    tvKeeResponse?.text = reason
                     tvKeeResponse?.setTextColor(Color.parseColor("#D97070"))
                     btnRetry?.visibility = View.VISIBLE
                 }
