@@ -297,15 +297,23 @@ class MainActivity : FlutterActivity() {
         } else {
             startVoiceServiceIfEligible()
         }
+
+        // Forward any pending route extra from the floating overlay "Open Kee" button
+        val route = intent?.getStringExtra("route")
+        if (route != null) {
+            intent?.removeExtra("route")
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                methodChannel?.invokeMethod("navigateTo", mapOf("route" to route))
+            }, 400)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        // When launched from floating overlay "Open Kee" button,
-        // navigate to /ask-kee via Flutter's deep-link mechanism
         val route = intent.getStringExtra("route")
         if (route != null) {
+            intent.removeExtra("route")
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
                 methodChannel?.invokeMethod("navigateTo", mapOf("route" to route))
             }, 300)

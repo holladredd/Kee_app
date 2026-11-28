@@ -30,18 +30,19 @@ class KeeVoiceOrb extends StatefulWidget {
 // Soft grey:    #77736B   Light accent: #D8D2C5
 // ─────────────────────────────────────────────────────────────
 class _KeeBrand {
-  static const Color obsidian      = Color(0xFF080808);
-  static const Color coreDeep      = Color(0xFF100F0D);
-  static const Color warmIvory     = Color(0xFFF3F0E8);
-  static const Color champagne     = Color(0xFFD8D2C5);
-  static const Color softGrey      = Color(0xFF77736B);
-  static const Color ivoryGlow     = Color(0xFFFBF7F0);
-  static const Color meshLine      = Color(0xFFBFB8AE);
-  static const Color errorRose     = Color(0xFFD97070);
-  static const Color amberWarm     = Color(0xFFD4A060);
+  static const Color obsidian = Color(0xFF080808);
+  static const Color coreDeep = Color(0xFF100F0D);
+  static const Color warmIvory = Color(0xFFF3F0E8);
+  static const Color champagne = Color(0xFFD8D2C5);
+  static const Color softGrey = Color(0xFF77736B);
+  static const Color ivoryGlow = Color(0xFFFBF7F0);
+  static const Color meshLine = Color(0xFFBFB8AE);
+  static const Color errorRose = Color(0xFFD97070);
+  static const Color amberWarm = Color(0xFFD4A060);
 }
 
-class _KeeVoiceOrbState extends State<KeeVoiceOrb> with TickerProviderStateMixin {
+class _KeeVoiceOrbState extends State<KeeVoiceOrb>
+    with TickerProviderStateMixin {
   late final AnimationController _pulseController;
   late final AnimationController _rotationController;
   late final AnimationController _meshController;
@@ -89,7 +90,8 @@ class _KeeVoiceOrbState extends State<KeeVoiceOrb> with TickerProviderStateMixin
         _pulseController.duration = const Duration(milliseconds: 3000);
         _rotationController.duration = const Duration(milliseconds: 11000);
         _meshController.duration = const Duration(milliseconds: 18000);
-        if (!_pulseController.isAnimating) _pulseController.repeat(reverse: true);
+        if (!_pulseController.isAnimating)
+          _pulseController.repeat(reverse: true);
       case AssistantState.listening:
         _pulseController.duration = const Duration(milliseconds: 1100);
         _rotationController.duration = const Duration(milliseconds: 4500);
@@ -204,7 +206,9 @@ class _KeeOrbPainter extends CustomPainter {
     final glowPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          activeColor.withValues(alpha: state == AssistantState.idle ? 0.18 : 0.38),
+          activeColor.withValues(
+            alpha: state == AssistantState.idle ? 0.18 : 0.38,
+          ),
           _KeeBrand.champagne.withValues(alpha: 0.07),
           Colors.transparent,
         ],
@@ -298,7 +302,9 @@ class _KeeOrbPainter extends CustomPainter {
       hlOffset,
       sphereRadius * 0.21,
       Paint()
-        ..color = _KeeBrand.ivoryGlow.withValues(alpha: 0.26 + 0.10 * pulseValue)
+        ..color = _KeeBrand.ivoryGlow.withValues(
+          alpha: 0.26 + 0.10 * pulseValue,
+        )
         ..style = PaintingStyle.fill,
     );
 
@@ -308,7 +314,9 @@ class _KeeOrbPainter extends CustomPainter {
         center,
         sphereRadius * (0.28 + 0.12 * pulseValue),
         Paint()
-          ..color = _KeeBrand.ivoryGlow.withValues(alpha: 0.55 + 0.3 * pulseValue)
+          ..color = _KeeBrand.ivoryGlow.withValues(
+            alpha: 0.55 + 0.3 * pulseValue,
+          )
           ..style = PaintingStyle.fill,
       );
     }
@@ -329,11 +337,13 @@ class _KeeOrbPainter extends CustomPainter {
   // ── Mesh grid: two overlapping rotated grids clipped to the orb ─────────────
   void _drawMeshGrid(Canvas canvas, Offset center, double baseRadius) {
     final meshRadius = baseRadius * 1.0;
-    final clipPath = Path()..addOval(Rect.fromCircle(center: center, radius: meshRadius));
+    final clipPath = Path()
+      ..addOval(Rect.fromCircle(center: center, radius: meshRadius));
 
     // Outer mesh halo extends slightly beyond the sphere
     final haloRadius = baseRadius * 1.22;
-    final haloPath = Path()..addOval(Rect.fromCircle(center: center, radius: haloRadius));
+    final haloPath = Path()
+      ..addOval(Rect.fromCircle(center: center, radius: haloRadius));
 
     final meshPaint = Paint()
       ..color = _KeeBrand.meshLine.withValues(alpha: 0.22)
@@ -356,17 +366,19 @@ class _KeeOrbPainter extends CustomPainter {
     canvas.save();
     canvas.clipPath(haloPath);
     // Exclude inner sphere from halo
-    final haloOnly = Path.combine(
-      PathOperation.difference,
-      haloPath,
-      clipPath,
-    );
+    final haloOnly = Path.combine(PathOperation.difference, haloPath, clipPath);
     canvas.clipPath(haloOnly);
     _drawRotatedGrid(canvas, center, haloRadius, meshAngle * 0.3, haloPaint);
     canvas.restore();
   }
 
-  void _drawRotatedGrid(Canvas canvas, Offset center, double radius, double angle, Paint paint) {
+  void _drawRotatedGrid(
+    Canvas canvas,
+    Offset center,
+    double radius,
+    double angle,
+    Paint paint,
+  ) {
     canvas.save();
     canvas.translate(center.dx, center.dy);
     canvas.rotate(angle);

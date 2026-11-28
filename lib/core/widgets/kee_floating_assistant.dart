@@ -8,13 +8,13 @@ import 'kee_voice_orb.dart';
 
 // Official Kee brand palette — mirrors _KeeBrand in kee_voice_orb.dart
 class _KB {
-  static const Color obsidian    = Color(0xFF080808);
-  static const Color warmIvory   = Color(0xFFF3F0E8);
-  static const Color softGrey    = Color(0xFF77736B);
+  static const Color obsidian = Color(0xFF080808);
+  static const Color warmIvory = Color(0xFFF3F0E8);
+  static const Color softGrey = Color(0xFF77736B);
   static const Color lightAccent = Color(0xFFD8D2C5);
-  static const Color surface     = Color(0xFF111110);
-  static const Color border      = Color(0xFF242220);
-  static const Color errorRose   = Color(0xFFD97070);
+  static const Color surface = Color(0xFF111110);
+  static const Color border = Color(0xFF242220);
+  static const Color errorRose = Color(0xFFD97070);
 }
 
 /// Floating AI Assistant Widget for Kee.
@@ -26,7 +26,8 @@ class KeeFloatingAssistant extends ConsumerStatefulWidget {
   const KeeFloatingAssistant({super.key});
 
   @override
-  ConsumerState<KeeFloatingAssistant> createState() => _KeeFloatingAssistantState();
+  ConsumerState<KeeFloatingAssistant> createState() =>
+      _KeeFloatingAssistantState();
 }
 
 class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
@@ -72,7 +73,8 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
     }
 
     // ── Compact floating pill ─────────────────────────────────────────────────
-    final isActive = safeAssistant.isListening ||
+    final isActive =
+        safeAssistant.isListening ||
         safeAssistant.isProcessing ||
         safeAssistant.isSpeaking;
 
@@ -222,9 +224,10 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
               if (assistant.errorMessage != null)
                 Padding(
                   padding: const EdgeInsets.only(
-                      top: AppSpacing.sm,
-                      left: AppSpacing.lg,
-                      right: AppSpacing.lg),
+                    top: AppSpacing.sm,
+                    left: AppSpacing.lg,
+                    right: AppSpacing.lg,
+                  ),
                   child: Text(
                     assistant.errorMessage!,
                     textAlign: TextAlign.center,
@@ -249,16 +252,24 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
   }
 
   // ── Top bar: minimize | logo wordmark | expand + close ────────────────────
-  Widget _buildTopBar(BuildContext context, VoiceAssistantController controller) {
+  Widget _buildTopBar(
+    BuildContext context,
+    VoiceAssistantController controller,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm, vertical: AppSpacing.sm),
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.sm,
+      ),
       child: Row(
         children: [
           // Minimize
           IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                size: 26, color: _KB.softGrey),
+            icon: const Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: 26,
+              color: _KB.softGrey,
+            ),
             tooltip: 'Minimize',
             onPressed: () => controller.setExpanded(false),
           ),
@@ -276,8 +287,11 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
 
           // Open full page
           IconButton(
-            icon: const Icon(Icons.open_in_full_rounded,
-                size: 18, color: _KB.softGrey),
+            icon: const Icon(
+              Icons.open_in_full_rounded,
+              size: 18,
+              color: _KB.softGrey,
+            ),
             tooltip: 'Open full chat',
             onPressed: () {
               controller.setExpanded(false);
@@ -287,8 +301,11 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
 
           // Close / dismiss session
           IconButton(
-            icon: const Icon(Icons.close_rounded,
-                size: 20, color: _KB.softGrey),
+            icon: const Icon(
+              Icons.close_rounded,
+              size: 20,
+              color: _KB.softGrey,
+            ),
             tooltip: 'Close session',
             onPressed: () => controller.dismissSession(),
           ),
@@ -300,19 +317,19 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
   // ── Transcript / response area ────────────────────────────────────────────
   Widget _buildTranscriptArea(VoiceAssistantState assistant) {
     final hasTranscript = assistant.liveTranscript.isNotEmpty;
-    final hasResponse   = assistant.lastAssistantResponse.isNotEmpty;
+    final hasResponse = assistant.lastAssistantResponse.isNotEmpty;
 
     final text = hasTranscript
         ? '"${assistant.liveTranscript}"'
         : hasResponse
-            ? assistant.lastAssistantResponse
-            : 'Talk naturally or type a question...';
+        ? assistant.lastAssistantResponse
+        : 'Talk naturally or type a question...';
 
     final textColor = hasTranscript
         ? _KB.warmIvory
         : hasResponse
-            ? _KB.warmIvory.withValues(alpha: 0.85)
-            : _KB.softGrey;
+        ? _KB.warmIvory.withValues(alpha: 0.85)
+        : _KB.softGrey;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
@@ -338,7 +355,9 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
   Widget _buildTextInput(VoiceAssistantController controller) {
     return Padding(
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.xs,
+      ),
       child: Container(
         decoration: BoxDecoration(
           color: _KB.surface,
@@ -364,11 +383,19 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.send_rounded, size: 20, color: _KB.lightAccent),
+              icon: const Icon(
+                Icons.send_rounded,
+                size: 20,
+                color: _KB.lightAccent,
+              ),
               onPressed: () => _sendBubbleText(controller),
             ),
             IconButton(
-              icon: const Icon(Icons.close_rounded, size: 18, color: _KB.softGrey),
+              icon: const Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: _KB.softGrey,
+              ),
               onPressed: () => setState(() => _showBubbleTextInput = false),
             ),
           ],
@@ -384,9 +411,13 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
   ) {
     return Container(
       margin: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
       padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.sm,
+      ),
       decoration: BoxDecoration(
         color: _KB.surface,
         borderRadius: BorderRadius.circular(32),
@@ -429,8 +460,9 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
                     : _KB.softGrey.withValues(alpha: 0.5),
               ),
             ),
-            onPressed:
-                assistant.isSpeaking ? () => controller.interrupt() : null,
+            onPressed: assistant.isSpeaking
+                ? () => controller.interrupt()
+                : null,
           ),
         ],
       ),
@@ -452,20 +484,20 @@ class _MicButton extends StatelessWidget {
     final Color iconColor;
 
     if (assistant.isListening) {
-      icon      = Icons.mic_rounded;
-      bg        = _KB.warmIvory;
+      icon = Icons.mic_rounded;
+      bg = _KB.warmIvory;
       iconColor = _KB.obsidian;
     } else if (assistant.isSpeaking) {
-      icon      = Icons.stop_rounded;
-      bg        = _KB.lightAccent.withValues(alpha: 0.18);
+      icon = Icons.stop_rounded;
+      bg = _KB.lightAccent.withValues(alpha: 0.18);
       iconColor = _KB.lightAccent;
     } else if (assistant.hasError) {
-      icon      = Icons.refresh_rounded;
-      bg        = _KB.errorRose.withValues(alpha: 0.15);
+      icon = Icons.refresh_rounded;
+      bg = _KB.errorRose.withValues(alpha: 0.15);
       iconColor = _KB.errorRose;
     } else {
-      icon      = Icons.mic_none_rounded;
-      bg        = _KB.border;
+      icon = Icons.mic_none_rounded;
+      bg = _KB.border;
       iconColor = _KB.lightAccent;
     }
 

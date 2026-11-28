@@ -676,6 +676,21 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     // FLOATING SYSTEM OVERLAY — Holographic Orb + Compact Panel
     // ─────────────────────────────────────────────────────────────
 
+    private fun getNavigationBarHeightPx(): Int {
+        val resourceId = resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24)
+    }
+
+    private fun loadKeeLogoBitmap(): Bitmap? {
+        return try {
+            assets.open("flutter_assets/assets/logo/kee_logo_mark_dark.png").use { stream ->
+                BitmapFactory.decodeStream(stream)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun showFloatingOverlay() {
         if (!Settings.canDrawOverlays(this)) return
         if (overlayView != null) return
@@ -689,7 +704,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        val cardWidth = (resources.displayMetrics.widthPixels * 0.92f).toInt()
+        val cardWidth = (resources.displayMetrics.widthPixels * 0.94f).toInt()
         val params = WindowManager.LayoutParams(
             cardWidth,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -698,7 +713,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            y = 72
+            y = getNavigationBarHeightPx() + dp(12)
         }
 
         overlayParams = params
@@ -708,114 +723,124 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-    private fun sp(value: Float): Float = value * resources.displayMetrics.scaledDensity
 
     private fun createOverlayView(): View {
-        // ── Root card: dark Kee-branded panel ──────────────────────────────────
-        val root = LinearLayout(this).apply {
+        // Transparent outer wrapper: primary floating holographic orb on top,
+        // compact dark Kee-branded conversation panel underneath.
+        val wrapper = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(10), dp(16), dp(14))
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.parseColor("#1A1714"), Color.parseColor("#0E0C0A"))
-            ).apply {
-                cornerRadius = dp(28).toFloat()
-                setStroke(dp(1), Color.parseColor("#3A312A"))
-            }
-            elevation = dp(20).toFloat()
+            gravity = Gravity.CENTER_HORIZONTAL
+            setBackgroundColor(Color.TRANSPARENT)
         }
 
-        // ── Drag pill ──────────────────────────────────────────────────────────
-        val dragPill = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(32), dp(3)).apply {
+        // ── 1. Primary element: Floating Holographic Orb ───────────────────────
+        orbAnimView = KeeHolographicOrbView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(96), dp(96)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 bottomMargin = dp(8)
             }
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#3D3328"))
-                cornerRadius = dp(2).toFloat()
+            setOnClickListener {
+                when {
+                    isSpeaking -> {
+                        cancelAutoDismissOverlay()
+                        tts?.stop()
+                        isSpeaking = false
+                        startListeningForUserQuery()
+                    }
+                    btnRetry?.visibility == View.VISIBLE -> retryLastRequest()
+                    !isOverlayCapturingSpeech && !isProcessingRequest -> startListeningForUserQuery()
+                    else -> dismissOverlay()
+                }
             }
         }
-        root.addView(dragPill)
+        wrapper.addView(orbAnimView)
 
-        // ── Header row: holographic orb | status/label | action buttons ────────
+        // ── 2. Secondary element: Compact Bottom Conversation Panel ────────────
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setPadding(dp(14), dp(10), dp(14), dp(12))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F0080808"))
+                cornerRadius = dp(22).toFloat()
+                setStroke(dp(1), Color.parseColor("#38D8D2C5"))
+            }
+            elevation = dp(18).toFloat()
+        }
+
+        // Header: official Kee logo mark + status + Retry + Speak/Interrupt + Open Kee + Close
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        // Holographic orb — custom drawn animated view
-        orbAnimView = KeeHolographicOrbView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(52), dp(52)).apply {
-                marginEnd = dp(12)
+        val logoBitmap = loadKeeLogoBitmap()
+        if (logoBitmap != null) {
+            val ivLogo = ImageView(this).apply {
+                setImageBitmap(logoBitmap)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply {
+                    marginEnd = dp(8)
+                }
             }
+            header.addView(ivLogo)
         }
-        header.addView(orbAnimView)
 
-        // Status label column
-        val titleCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        val tvBrand = TextView(this).apply {
-            text = "Kee"
-            setTextColor(Color.parseColor("#F3F0E8"))
-            textSize = 13f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            letterSpacing = 0.08f
-        }
-        titleCol.addView(tvBrand)
         tvStatus = TextView(this).apply {
             text = "Listening..."
             setTextColor(Color.parseColor("#77736B"))
-            textSize = 11f
-            letterSpacing = 0.05f
+            textSize = 11.5f
+            letterSpacing = 0.04f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        titleCol.addView(tvStatus)
-        header.addView(titleCol)
+        header.addView(tvStatus)
 
-        // Speak / Interrupt / Retry pill button
+        // Retry pill (visible only when a request fails)
+        btnRetry = TextView(this).apply {
+            text = "Retry"
+            textSize = 11f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#080808"))
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#D97070"))
+                cornerRadius = dp(14).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = dp(6) }
+            setOnClickListener { retryLastRequest() }
+        }
+        header.addView(btnRetry)
+
+        // Speak / Interrupt pill
         btnActionMic = TextView(this).apply {
             text = "Speak"
             textSize = 11f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#0E0C0A"))
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.parseColor("#080808"))
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setPadding(dp(10), dp(5), dp(10), dp(5))
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#D8D2C5"))
-                cornerRadius = dp(16).toFloat()
+                cornerRadius = dp(14).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { marginEnd = dp(6) }
             setOnClickListener {
-                when (btnActionMic?.text?.toString()) {
-                    "Retry" -> {
-                        val q = lastUserQuery
-                        if (!q.isNullOrBlank()) {
-                            isProcessingRequest = false
-                            processSpokenQuery(q)
-                        } else {
-                            startListeningForUserQuery()
-                        }
-                    }
-                    "Interrupt" -> {
-                        cancelAutoDismissOverlay()
-                        tts?.stop()
-                        isSpeaking = false
-                        isProcessingRequest = false
-                        startListeningForUserQuery()
-                    }
-                    else -> {
-                        cancelAutoDismissOverlay()
-                        tts?.stop()
-                        isSpeaking = false
-                        isProcessingRequest = false
-                        startListeningForUserQuery()
-                    }
-                }
+                cancelAutoDismissOverlay()
+                tts?.stop()
+                isSpeaking = false
+                isProcessingRequest = false
+                startListeningForUserQuery()
             }
         }
         header.addView(btnActionMic)
@@ -824,14 +849,14 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         val btnOpenApp = TextView(this).apply {
             text = "Open Kee"
             textSize = 11f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTypeface(typeface, Typeface.BOLD)
             setTextColor(Color.parseColor("#D8D2C5"))
             gravity = Gravity.CENTER
-            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setPadding(dp(10), dp(5), dp(10), dp(5))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#201C18"))
-                cornerRadius = dp(16).toFloat()
-                setStroke(1, Color.parseColor("#3D3328"))
+                setColor(Color.parseColor("#141311"))
+                cornerRadius = dp(14).toFloat()
+                setStroke(1, Color.parseColor("#38D8D2C5"))
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -841,49 +866,103 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         }
         header.addView(btnOpenApp)
 
-        // Close button
+        // Close / minimize button
         val btnClose = TextView(this).apply {
             text = "✕"
             textSize = 12f
             setTextColor(Color.parseColor("#77736B"))
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(dp(26), dp(26))
+            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#1E1A17"))
+                setColor(Color.parseColor("#181715"))
             }
             setOnClickListener { dismissOverlay() }
         }
         header.addView(btnClose)
-        root.addView(header)
+        panel.addView(header)
 
-        // ── Transcript / response text ─────────────────────────────────────────
+        // Subtle divider
         val divider = View(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(1)
             ).apply {
-                topMargin = dp(10)
+                topMargin = dp(8)
                 bottomMargin = dp(8)
             }
-            setBackgroundColor(Color.parseColor("#252219"))
+            setBackgroundColor(Color.parseColor("#242220"))
         }
-        root.addView(divider)
+        panel.addView(divider)
 
-        tvTranscript = TextView(this).apply {
+        // User row ("You" label + latest user transcription)
+        val uRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(4) }
+        }
+        val tvYouLabel = TextView(this).apply {
+            text = "You"
+            setTextColor(Color.parseColor("#77736B"))
+            textSize = 11.5f
+            setTypeface(typeface, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(dp(34), LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        uRow.addView(tvYouLabel)
+
+        tvUserTranscript = TextView(this).apply {
             text = "Speak naturally..."
+            setTextColor(Color.parseColor("#D8D2C5"))
+            textSize = 13f
+            setLineSpacing(dp(1).toFloat(), 1.15f)
+            maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        uRow.addView(tvUserTranscript)
+        userRow = uRow
+        panel.addView(uRow)
+
+        // Kee row ("Kee" label + latest Kee response)
+        val kRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(2) }
+        }
+        val tvKeeLabel = TextView(this).apply {
+            text = "Kee"
+            setTextColor(Color.parseColor("#D8D2C5"))
+            textSize = 11.5f
+            setTypeface(typeface, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(dp(34), LinearLayout.LayoutParams.WRAP_CONTENT)
+        }
+        kRow.addView(tvKeeLabel)
+
+        tvKeeResponse = TextView(this).apply {
+            text = ""
             setTextColor(Color.parseColor("#F3F0E8"))
-            textSize = 14f
+            textSize = 13.5f
             setLineSpacing(dp(2).toFloat(), 1.18f)
-            setPadding(dp(2), 0, dp(2), dp(2))
-            maxLines = 5
+            maxLines = 4
             ellipsize = android.text.TextUtils.TruncateAt.END
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        root.addView(tvTranscript)
+        kRow.addView(tvKeeResponse)
+        keeRow = kRow
+        panel.addView(kRow)
 
-        // ── Drag to reposition ─────────────────────────────────────────────────
+        wrapper.addView(panel)
+
+        // Drag panel vertically to reposition over host apps
         var initialY = 0
         var initialTouchY = 0f
-        root.setOnTouchListener { _, event ->
+        panel.setOnTouchListener { _, event ->
             val p = overlayParams ?: return@setOnTouchListener false
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -893,67 +972,29 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dy = (initialTouchY - event.rawY).toInt()
-                    p.y = (initialY + dy).coerceIn(dp(24), resources.displayMetrics.heightPixels - dp(200))
-                    windowManager?.updateViewLayout(root, p)
+                    p.y = (initialY + dy).coerceIn(dp(16), resources.displayMetrics.heightPixels - dp(260))
+                    windowManager?.updateViewLayout(wrapper, p)
                     true
                 }
                 else -> false
             }
         }
 
-        return root
+        return wrapper
     }
 
     private fun animateOrb(rmsdB: Float) {
-        orbAnimView?.setAmplitude(rmsdB)
-    }
-            setTextColor(Color.parseColor("#F5EFE6"))
-            textSize = 14.5f
-            setLineSpacing(dp(2).toFloat(), 1.15f)
-            setPadding(dp(4), dp(12), dp(4), dp(4))
-            maxLines = 5
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        root.addView(tvTranscript)
-
-        // Allow dragging the floating bubble vertically/horizontally
-        var initialY = 0
-        var initialTouchY = 0f
-        root.setOnTouchListener { _, event ->
-            val p = overlayParams ?: return@setOnTouchListener false
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialY = p.y
-                    initialTouchY = event.rawY
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dy = (initialTouchY - event.rawY).toInt()
-                    p.y = (initialY + dy).coerceIn(dp(24), resources.displayMetrics.heightPixels - dp(180))
-                    windowManager?.updateViewLayout(root, p)
-                    true
-                }
-                else -> false
-            }
-        }
-
-        return root
-    }
-
-    private fun animateOrb(rmsdB: Float) {
-        val scale = (1.0f + (rmsdB / 15.0f).coerceIn(0f, 0.5f))
-        orbView?.animate()?.scaleX(scale)?.scaleY(scale)?.setDuration(80)?.start()
-        orbRingView?.animate()?.scaleX(scale * 1.15f)?.scaleY(scale * 1.15f)?.setDuration(80)?.start()
+        orbAnimView?.setListeningAmplitude(rmsdB)
     }
 
     private fun launchFullApp() {
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val launchIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("route", "/ask-kee")
         }
-        if (launchIntent != null) {
-            startActivity(launchIntent)
-        }
+        startActivity(launchIntent)
         dismissOverlay()
     }
 
@@ -968,6 +1009,13 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 } catch (_: Exception) {}
                 overlayView = null
                 orbAnimView = null
+                userRow = null
+                tvUserTranscript = null
+                keeRow = null
+                tvKeeResponse = null
+                tvStatus = null
+                btnActionMic = null
+                btnRetry = null
             }
             isOverlayShowing = false
             isOverlayCapturingSpeech = false
@@ -1002,6 +1050,13 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 override fun onStart(utteranceId: String?) {
                     isSpeaking = true
                     cancelAutoDismissOverlay()
+                }
+                override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
+                    mainHandler.post {
+                        if (isSpeaking && isOverlayShowing) {
+                            orbAnimView?.onTtsWordBoundary((end - start).coerceAtLeast(1))
+                        }
+                    }
                 }
                 override fun onDone(utteranceId: String?) {
                     isSpeaking = false
