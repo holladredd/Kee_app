@@ -107,12 +107,18 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
     // ── Overlay UI references ─────────────────────────────────────────────────
     private var orbAnimView: KeeHolographicOrbView? = null
-    private var tvTranscript: TextView? = null
+    private var userRow: View? = null
+    private var tvUserTranscript: TextView? = null
+    private var keeRow: View? = null
+    private var tvKeeResponse: TextView? = null
     private var tvStatus: TextView? = null
     private var btnActionMic: TextView? = null
+    private var btnRetry: TextView? = null
     private var overlayParams: WindowManager.LayoutParams? = null
-    // Last user query preserved for Retry
+    // Preserved query state for safe Retry without duplicating successful actions
     private var lastUserQuery: String? = null
+    private var lastQuerySucceeded: Boolean = false
+    private var lastFailureWasSpeech: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -426,10 +432,9 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             }
         } else {
             // User is speaking to the assistant in the overlay
-            if (tvTranscript != null) {
-                mainHandler.post {
-                    tvTranscript?.text = "\"$text\""
-                }
+            mainHandler.post {
+                userRow?.visibility = View.VISIBLE
+                tvUserTranscript?.text = "\"$text\""
             }
 
             if (isFinal && text.trim().isNotEmpty()) {
@@ -462,10 +467,15 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private fun startListeningForUserQuery() {
         cancelAutoDismissOverlay()
         isOverlayCapturingSpeech = true
+        lastFailureWasSpeech = false
+        lastQuerySucceeded = false
         mainHandler.post {
             orbAnimView?.setState(OrbState.LISTENING)
             updateOverlayState("Listening...", "Speak")
-            tvTranscript?.text = "Speak naturally..."
+            btnRetry?.visibility = View.GONE
+            userRow?.visibility = View.VISIBLE
+            tvUserTranscript?.text = "Speak naturally..."
+            keeRow?.visibility = View.GONE
         }
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -488,16 +498,37 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         }, 300)
     }
 
+    private fun retryLastRequest() {
+        if (isProcessingRequest) return
+        cancelAutoDismissOverlay()
+        tts?.stop()
+        isSpeaking = false
+
+        if (lastFailureWasSpeech || lastUserQuery.isNullOrBlank()) {
+            startListeningForUserQuery()
+            return
+        }
+        if (lastQuerySucceeded) return
+        val q = lastUserQuery ?: return
+        processSpokenQuery(q)
+    }
+
     private fun processSpokenQuery(query: String) {
         if (isProcessingRequest) return
         cancelAutoDismissOverlay()
         isOverlayCapturingSpeech = false
         isProcessingRequest = true
         lastUserQuery = query
+        lastQuerySucceeded = false
+        lastFailureWasSpeech = false
 
         mainHandler.post {
             orbAnimView?.setState(OrbState.THINKING)
             updateOverlayState("Thinking...", "Wait")
+            btnRetry?.visibility = View.GONE
+            userRow?.visibility = View.VISIBLE
+            tvUserTranscript?.text = "\"$query\""
+            keeRow?.visibility = View.GONE
             speechRecognizer?.stopListening()
         }
 
@@ -509,7 +540,10 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 if (!completed) {
                     completed = true
                     Log.w("KeeVoiceService", "queryHandler timed out for query: $query")
-                    displayAndSpeakResponse("Kee is not connected right now. Please open the Kee app and try again.", isError = true)
+                    displayAndSpeakResponse(
+                        "Kee took too long to respond. Tap Retry to try again.",
+                        isError = true
+                    )
                 }
             }
             mainHandler.postDelayed(timeoutRunnable, 15000L)
@@ -519,13 +553,16 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                     if (!completed) {
                         completed = true
                         mainHandler.removeCallbacks(timeoutRunnable)
-                        displayAndSpeakResponse(response, isError = false)
+                        val lower = response.lowercase(Locale.ROOT)
+                        val isEngineError = lower.contains("couldn't process that request") ||
+                            lower.contains("not connected right now")
+                        displayAndSpeakResponse(response, isError = isEngineError)
                     }
                 }
             }
         } else {
             Log.w("KeeVoiceService", "queryHandler unavailable for query: $query")
-            val fallback = "Kee is not connected right now. Please open the Kee app and try again."
+            val fallback = "Kee is not connected right now. Tap Retry or Open Kee."
             mainHandler.post {
                 displayAndSpeakResponse(fallback, isError = true)
             }
@@ -534,15 +571,21 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun displayAndSpeakResponse(reply: String, isError: Boolean = false) {
         isProcessingRequest = false
+        lastQuerySucceeded = !isError
         mainHandler.post {
-            tvTranscript?.text = reply
+            keeRow?.visibility = View.VISIBLE
+            tvKeeResponse?.text = reply
+            tvKeeResponse?.setTextColor(
+                Color.parseColor(if (isError) "#D97070" else "#F3F0E8")
+            )
+            btnRetry?.visibility = if (isError) View.VISIBLE else View.GONE
             if (isError) {
                 orbAnimView?.setState(OrbState.ERROR)
-                updateOverlayState("Error", "Retry")
+                updateOverlayState("Request failed", "Speak")
             }
         }
 
-        // Speak reply using native Android TTS
+        // Speak reply using native Android TTS when successful
         if (isTtsReady && tts != null && !isError) {
             val res = tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "KEE_REPLY")
             if (res == TextToSpeech.SUCCESS) {
@@ -556,10 +599,12 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         }
 
         isSpeaking = false
-        mainHandler.post {
-            orbAnimView?.setState(if (isError) OrbState.ERROR else OrbState.IDLE)
-            updateOverlayState(if (isError) "Failed — tap Retry" else "Tap Speak to ask", "Speak")
-            scheduleAutoDismissOverlay()
+        if (!isError) {
+            mainHandler.post {
+                orbAnimView?.setState(OrbState.IDLE)
+                updateOverlayState("Tap orb to ask", "Speak")
+                scheduleAutoDismissOverlay()
+            }
         }
     }
 
@@ -587,15 +632,22 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             }
         } else {
             isOverlayCapturingSpeech = false
-            if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                mainHandler.post {
-                    orbAnimView?.setState(OrbState.IDLE)
-                    updateOverlayState("Tap Speak to ask", "Speak")
-                }
-            } else {
-                mainHandler.post {
+            lastFailureWasSpeech = true
+            mainHandler.post {
+                if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                     orbAnimView?.setState(OrbState.ERROR)
-                    updateOverlayState("Tap Retry to try again", "Retry")
+                    updateOverlayState("Didn't catch that", "Speak")
+                    keeRow?.visibility = View.VISIBLE
+                    tvKeeResponse?.text = "I didn't hear anything. Tap Retry to speak again."
+                    tvKeeResponse?.setTextColor(Color.parseColor("#D8D2C5"))
+                    btnRetry?.visibility = View.VISIBLE
+                } else {
+                    orbAnimView?.setState(OrbState.ERROR)
+                    updateOverlayState("Voice error", "Speak")
+                    keeRow?.visibility = View.VISIBLE
+                    tvKeeResponse?.text = "Speech recognition failed. Tap Retry to try again."
+                    tvKeeResponse?.setTextColor(Color.parseColor("#D97070"))
+                    btnRetry?.visibility = View.VISIBLE
                 }
             }
         }
@@ -621,7 +673,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // FLOATING SYSTEM OVERLAY (outside the Kee app)
+    // FLOATING SYSTEM OVERLAY — Holographic Orb + Compact Panel
     // ─────────────────────────────────────────────────────────────
 
     private fun showFloatingOverlay() {
@@ -656,162 +708,205 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun sp(value: Float): Float = value * resources.displayMetrics.scaledDensity
 
     private fun createOverlayView(): View {
+        // ── Root card: dark Kee-branded panel ──────────────────────────────────
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(14), dp(18), dp(16))
-            val bg = GradientDrawable(
+            setPadding(dp(16), dp(10), dp(16), dp(14))
+            background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.parseColor("#1B1714"), Color.parseColor("#110E0C"))
+                intArrayOf(Color.parseColor("#1A1714"), Color.parseColor("#0E0C0A"))
             ).apply {
-                cornerRadius = dp(26).toFloat()
-                setStroke(dp(1), Color.parseColor("#473B2D"))
+                cornerRadius = dp(28).toFloat()
+                setStroke(dp(1), Color.parseColor("#3A312A"))
             }
-            background = bg
-            elevation = dp(16).toFloat()
+            elevation = dp(20).toFloat()
         }
 
-        // Top drag handle bar
+        // ── Drag pill ──────────────────────────────────────────────────────────
         val dragPill = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(36), dp(4)).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(32), dp(3)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(10)
+                bottomMargin = dp(8)
             }
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#4A3F32"))
+                setColor(Color.parseColor("#3D3328"))
                 cornerRadius = dp(2).toFloat()
             }
         }
         root.addView(dragPill)
 
-        // Header: Glowing Orb + Status + Open Kee + Close
+        // ── Header row: holographic orb | status/label | action buttons ────────
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val orbContainer = FrameLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply {
-                marginEnd = dp(10)
+        // Holographic orb — custom drawn animated view
+        orbAnimView = KeeHolographicOrbView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(52), dp(52)).apply {
+                marginEnd = dp(12)
             }
         }
+        header.addView(orbAnimView)
 
-        orbRingView = View(this).apply {
-            layoutParams = FrameLayout.LayoutParams(dp(34), dp(34), Gravity.CENTER)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.TRANSPARENT)
-                setStroke(3, Color.argb(110, 232, 208, 178))
-            }
-        }
-        orbContainer.addView(orbRingView)
-
-        orbView = View(this).apply {
-            layoutParams = FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#E8D0B2"))
-            }
-        }
-        orbContainer.addView(orbView)
-        header.addView(orbContainer)
-
+        // Status label column
         val titleCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         val tvBrand = TextView(this).apply {
             text = "Kee"
-            setTextColor(Color.parseColor("#F5EFE6"))
+            setTextColor(Color.parseColor("#F3F0E8"))
             textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            letterSpacing = 0.08f
         }
         titleCol.addView(tvBrand)
-
         tvStatus = TextView(this).apply {
             text = "Listening..."
-            setTextColor(Color.parseColor("#CBB89D"))
+            setTextColor(Color.parseColor("#77736B"))
             textSize = 11f
+            letterSpacing = 0.05f
         }
         titleCol.addView(tvStatus)
         header.addView(titleCol)
 
-        // Speak / Interrupt pill
+        // Speak / Interrupt / Retry pill button
         btnActionMic = TextView(this).apply {
             text = "Speak"
             textSize = 11f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#12100E"))
+            setTextColor(Color.parseColor("#0E0C0A"))
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(6), dp(12), dp(6))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#E8D0B2"))
+                setColor(Color.parseColor("#D8D2C5"))
                 cornerRadius = dp(16).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                marginEnd = dp(8)
-            }
+            ).apply { marginEnd = dp(6) }
             setOnClickListener {
-                cancelAutoDismissOverlay()
-                tts?.stop()
-                isSpeaking = false
-                isProcessingRequest = false
-                startListeningForUserQuery()
+                when (btnActionMic?.text?.toString()) {
+                    "Retry" -> {
+                        val q = lastUserQuery
+                        if (!q.isNullOrBlank()) {
+                            isProcessingRequest = false
+                            processSpokenQuery(q)
+                        } else {
+                            startListeningForUserQuery()
+                        }
+                    }
+                    "Interrupt" -> {
+                        cancelAutoDismissOverlay()
+                        tts?.stop()
+                        isSpeaking = false
+                        isProcessingRequest = false
+                        startListeningForUserQuery()
+                    }
+                    else -> {
+                        cancelAutoDismissOverlay()
+                        tts?.stop()
+                        isSpeaking = false
+                        isProcessingRequest = false
+                        startListeningForUserQuery()
+                    }
+                }
             }
         }
         header.addView(btnActionMic)
 
-        // Open App pill
+        // Open Kee pill
         val btnOpenApp = TextView(this).apply {
-            text = "Open"
+            text = "Open Kee"
             textSize = 11f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#E8D0B2"))
+            setTextColor(Color.parseColor("#D8D2C5"))
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setPadding(dp(10), dp(6), dp(10), dp(6))
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#282119"))
+                setColor(Color.parseColor("#201C18"))
                 cornerRadius = dp(16).toFloat()
-                setStroke(1, Color.parseColor("#544636"))
+                setStroke(1, Color.parseColor("#3D3328"))
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                marginEnd = dp(8)
-            }
-            setOnClickListener {
-                launchFullApp()
-            }
+            ).apply { marginEnd = dp(6) }
+            setOnClickListener { launchFullApp() }
         }
         header.addView(btnOpenApp)
 
-        // Circular Close Button
+        // Close button
         val btnClose = TextView(this).apply {
             text = "✕"
-            textSize = 13f
-            setTextColor(Color.parseColor("#C2B5A3"))
+            textSize = 12f
+            setTextColor(Color.parseColor("#77736B"))
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
+            layoutParams = LinearLayout.LayoutParams(dp(26), dp(26))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#241E18"))
+                setColor(Color.parseColor("#1E1A17"))
             }
-            setOnClickListener {
-                dismissOverlay()
-            }
+            setOnClickListener { dismissOverlay() }
         }
         header.addView(btnClose)
-
         root.addView(header)
 
-        // Transcript / Answer display
+        // ── Transcript / response text ─────────────────────────────────────────
+        val divider = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(1)
+            ).apply {
+                topMargin = dp(10)
+                bottomMargin = dp(8)
+            }
+            setBackgroundColor(Color.parseColor("#252219"))
+        }
+        root.addView(divider)
+
         tvTranscript = TextView(this).apply {
             text = "Speak naturally..."
+            setTextColor(Color.parseColor("#F3F0E8"))
+            textSize = 14f
+            setLineSpacing(dp(2).toFloat(), 1.18f)
+            setPadding(dp(2), 0, dp(2), dp(2))
+            maxLines = 5
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        root.addView(tvTranscript)
+
+        // ── Drag to reposition ─────────────────────────────────────────────────
+        var initialY = 0
+        var initialTouchY = 0f
+        root.setOnTouchListener { _, event ->
+            val p = overlayParams ?: return@setOnTouchListener false
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialY = p.y
+                    initialTouchY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dy = (initialTouchY - event.rawY).toInt()
+                    p.y = (initialY + dy).coerceIn(dp(24), resources.displayMetrics.heightPixels - dp(200))
+                    windowManager?.updateViewLayout(root, p)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        return root
+    }
+
+    private fun animateOrb(rmsdB: Float) {
+        orbAnimView?.setAmplitude(rmsdB)
+    }
             setTextColor(Color.parseColor("#F5EFE6"))
             textSize = 14.5f
             setLineSpacing(dp(2).toFloat(), 1.15f)
@@ -872,6 +967,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                     windowManager?.removeView(overlayView)
                 } catch (_: Exception) {}
                 overlayView = null
+                orbAnimView = null
             }
             isOverlayShowing = false
             isOverlayCapturingSpeech = false
@@ -909,11 +1005,10 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 }
                 override fun onDone(utteranceId: String?) {
                     isSpeaking = false
-                    // One-shot overlay response complete: update UI, then auto-dismiss
-                    // after a brief grace period so Vosk resumes listening for "Hi Kee".
                     mainHandler.post {
                         if (isOverlayShowing && !isProcessingRequest && !isOverlayCapturingSpeech) {
-                            updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
+                            orbAnimView?.setState(OrbState.IDLE)
+                            updateOverlayState("Tap Speak to ask", "Speak")
                             scheduleAutoDismissOverlay()
                         }
                     }
@@ -922,7 +1017,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                     isSpeaking = false
                     mainHandler.post {
                         if (isOverlayShowing && !isProcessingRequest && !isOverlayCapturingSpeech) {
-                            updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
+                            orbAnimView?.setState(OrbState.IDLE)
+                            updateOverlayState("Tap Speak to ask", "Speak")
                             scheduleAutoDismissOverlay()
                         }
                     }
