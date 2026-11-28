@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.provider.Settings
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
@@ -102,15 +103,29 @@ class MainActivity : FlutterActivity() {
         // Connect the background voice service to Kee's intelligence pipeline in Flutter
         KeeBackgroundVoiceService.queryHandler = { query, callback ->
             runOnUiThread {
-                methodChannel?.invokeMethod("processQuery", mapOf("query" to query), object : MethodChannel.Result {
+                val channel = methodChannel
+                if (channel == null) {
+                    Log.w("KeeMainActivity", "MethodChannel unavailable for query: $query")
+                    callback("Kee is not ready to process voice requests right now. Please try again.")
+                    return@runOnUiThread
+                }
+                channel.invokeMethod("processQuery", mapOf("query" to query), object : MethodChannel.Result {
                     override fun success(result: Any?) {
-                        callback(result as? String ?: "I've noted that for you.")
+                        val reply = result as? String
+                        if (reply.isNullOrBlank()) {
+                            Log.w("KeeMainActivity", "Empty reply from Flutter engine for query: $query")
+                            callback("I couldn't process that request. Please try again.")
+                        } else {
+                            callback(reply)
+                        }
                     }
                     override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
-                        callback("I've saved your note: $query.")
+                        Log.e("KeeMainActivity", "Flutter query error [$errorCode]: $errorMessage")
+                        callback("I couldn't process that request. Please try again.")
                     }
                     override fun notImplemented() {
-                        callback("Noted: $query.")
+                        Log.e("KeeMainActivity", "processQuery not implemented on Flutter side")
+                        callback("Kee is not ready to process voice requests right now. Please try again.")
                     }
                 })
             }

@@ -15,7 +15,9 @@ final nativeVoiceBridgeProvider = Provider<NativeVoiceBridge>((ref) {
 });
 
 class NativeVoiceBridge {
-  static const MethodChannel _channel = MethodChannel('com.kee.app/voice_service');
+  static const MethodChannel _channel = MethodChannel(
+    'com.kee.app/voice_service',
+  );
   final Ref _ref;
   void Function(int progress)? _onDownloadProgress;
 
@@ -53,20 +55,24 @@ class NativeVoiceBridge {
 
       // Record in Kee's single unified chat thread
       try {
-        _ref.read(unifiedChatProvider.notifier).recordVoiceTurn(
-          userText: trimmed,
-          assistantText: action.responseText,
-          intent: action.intent,
-          savedMemory: action.savedMemory,
-          scheduledReminder: action.scheduledReminder,
-          savedTask: action.savedTask,
-          citations: action.citedMemories,
-          citedReminders: action.citedReminders,
-          citedTasks: action.citedTasks,
-        );
+        _ref
+            .read(unifiedChatProvider.notifier)
+            .recordVoiceTurn(
+              userText: trimmed,
+              assistantText: action.responseText,
+              intent: action.intent,
+              savedMemory: action.savedMemory,
+              scheduledReminder: action.scheduledReminder,
+              savedTask: action.savedTask,
+              citations: action.citedMemories,
+              citedReminders: action.citedReminders,
+              citedTasks: action.citedTasks,
+            );
 
         // Run sync/consolidation walk if items saved
-        if (action.savedMemory != null || action.scheduledReminder != null || action.savedTask != null) {
+        if (action.savedMemory != null ||
+            action.scheduledReminder != null ||
+            action.savedTask != null) {
           _ref.read(backgroundWalkerProvider.notifier).walkNow();
         }
       } catch (e) {
@@ -76,7 +82,7 @@ class NativeVoiceBridge {
       return action.responseText;
     } catch (e) {
       debugPrint('[NativeVoiceBridge] Processing error: $e');
-      return "I've saved your note: $trimmed.";
+      return "I couldn't process that request. Please try again.";
     }
   }
 
@@ -109,7 +115,9 @@ class NativeVoiceBridge {
   Future<bool> isOverlayPermissionGranted() async {
     if (kIsWeb || !Platform.isAndroid) return false;
     try {
-      final res = await _channel.invokeMethod<bool>('isOverlayPermissionGranted');
+      final res = await _channel.invokeMethod<bool>(
+        'isOverlayPermissionGranted',
+      );
       return res ?? false;
     } catch (e) {
       return false;
@@ -147,10 +155,15 @@ class NativeVoiceBridge {
 
   Future<Map<String, dynamic>> openApp(String appName) async {
     if (kIsWeb || !Platform.isAndroid) {
-      return {'success': false, 'message': 'App launching is only supported on Android.'};
+      return {
+        'success': false,
+        'message': 'App launching is only supported on Android.',
+      };
     }
     try {
-      final res = await _channel.invokeMethod<Map>('openApp', {'appName': appName});
+      final res = await _channel.invokeMethod<Map>('openApp', {
+        'appName': appName,
+      });
       return Map<String, dynamic>.from(res ?? {});
     } catch (e) {
       return {'success': false, 'message': "Couldn't open $appName."};
@@ -159,10 +172,15 @@ class NativeVoiceBridge {
 
   Future<Map<String, dynamic>> callContact(String target) async {
     if (kIsWeb || !Platform.isAndroid) {
-      return {'success': false, 'message': 'Calling is only supported on Android.'};
+      return {
+        'success': false,
+        'message': 'Calling is only supported on Android.',
+      };
     }
     try {
-      final res = await _channel.invokeMethod<Map>('callContact', {'target': target});
+      final res = await _channel.invokeMethod<Map>('callContact', {
+        'target': target,
+      });
       return Map<String, dynamic>.from(res ?? {});
     } catch (e) {
       return {'success': false, 'message': "Couldn't place call to $target."};

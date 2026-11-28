@@ -14,7 +14,9 @@ final ttsServiceProvider = Provider<ITextToSpeechService>((ref) {
   return FlutterTtsService();
 });
 
-final speechRecognitionServiceProvider = Provider<ISpeechRecognitionService>((ref) {
+final speechRecognitionServiceProvider = Provider<ISpeechRecognitionService>((
+  ref,
+) {
   return SpeechToTextService();
 });
 
@@ -22,9 +24,10 @@ final wakeWordServiceProvider = Provider<WakeWordService>((ref) {
   return WakeWordService();
 });
 
-final voiceAssistantProvider = NotifierProvider<VoiceAssistantController, VoiceAssistantState>(() {
-  return VoiceAssistantController();
-});
+final voiceAssistantProvider =
+    NotifierProvider<VoiceAssistantController, VoiceAssistantState>(() {
+      return VoiceAssistantController();
+    });
 
 class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   late final ITextToSpeechService _tts;
@@ -34,6 +37,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   Timer? _silenceTimer;
   Timer? _continuousTurnTimer;
   Timer? _errorRecoveryTimer;
+  bool _hasDispatchedFinalForTurn = false;
 
   @override
   VoiceAssistantState build() {
@@ -79,10 +83,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
         if (lower.contains('no-speech') || lower.contains('aborted')) {
           // If silence detected, gracefully return to idle rather than showing a red error
           if (state.isListening && state.liveTranscript.isEmpty) {
-            state = state.copyWith(
-              state: AssistantState.idle,
-              soundLevel: 0.0,
-            );
+            state = state.copyWith(state: AssistantState.idle, soundLevel: 0.0);
           }
           return;
         }
@@ -92,8 +93,10 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
           friendlyMessage = kIsWeb
               ? 'Web speech requires cloud STT access. Please verify your connection or type below.'
               : 'Voice recognition network error. Please check your connection.';
-        } else if (lower.contains('not-allowed') || lower.contains('permission')) {
-          friendlyMessage = 'Microphone permission denied. Allow mic access in your browser or device settings.';
+        } else if (lower.contains('not-allowed') ||
+            lower.contains('permission')) {
+          friendlyMessage =
+              'Microphone permission denied. Allow mic access in your browser or device settings.';
         } else {
           friendlyMessage = 'Speech recognition notice: $err';
         }
@@ -132,10 +135,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     // Auto-recover after 4 seconds so the assistant UI is never permanently blocked
     _errorRecoveryTimer = Timer(const Duration(seconds: 4), () {
       if (state.state == AssistantState.error) {
-        state = state.copyWith(
-          state: AssistantState.idle,
-          errorMessage: null,
-        );
+        state = state.copyWith(state: AssistantState.idle, errorMessage: null);
       }
     });
   }
@@ -175,6 +175,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   Future<void> startListening() async {
     _silenceTimer?.cancel();
     _continuousTurnTimer?.cancel();
+    _hasDispatchedFinalForTurn = false;
 
     // If currently speaking, stop TTS first
     if (state.isSpeaking) {
@@ -183,6 +184,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
 
     state = state.copyWith(
       state: AssistantState.listening,
+      liveTranscript: '',
       errorMessage: null,
       soundLevel: 0.0,
     );
@@ -194,21 +196,32 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
         listenFor: const Duration(seconds: 25),
         pauseFor: const Duration(seconds: 3),
         onSoundLevel: (level) {
-          state = state.copyWith(soundLevel: level);
+          if (state.isListening) {
+            state = state.copyWith(soundLevel: level);
+          }
         },
         onResult: (text, isFinal) {
+          // Ignore stale callbacks if session already moved to processing/idle
+          if (!state.isListening && !state.isInterrupted) return;
+
           state = state.copyWith(liveTranscript: text);
 
-          if (isFinal && text.trim().isNotEmpty) {
+          if (isFinal &&
+              text.trim().isNotEmpty &&
+              !_hasDispatchedFinalForTurn) {
+            _hasDispatchedFinalForTurn = true;
+            _continuousTurnTimer?.cancel();
             processSpokenInput(text);
           }
         },
       );
     } catch (e) {
       String msg = e.toString();
-      if (msg.contains('InvalidStateError') || msg.contains('already started')) {
+      if (msg.contains('InvalidStateError') ||
+          msg.contains('already started')) {
         msg = 'Microphone was resetting. Please tap again.';
-      } else if (msg.contains('not initialized') || msg.contains('permission')) {
+      } else if (msg.contains('not initialized') ||
+          msg.contains('permission')) {
         msg = kIsWeb
             ? 'Please allow microphone access in your browser.'
             : 'Microphone permission required.';
@@ -261,19 +274,23 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
 
       // Automatically add to the single unified chat thread
       try {
-        ref.read(unifiedChatProvider.notifier).recordVoiceTurn(
-          userText: query,
-          assistantText: reply,
-          intent: action.intent,
-          savedMemory: action.savedMemory,
-          scheduledReminder: action.scheduledReminder,
-          savedTask: action.savedTask,
-          citations: action.citedMemories,
-          citedReminders: action.citedReminders,
-          citedTasks: action.citedTasks,
-        );
+        ref
+            .read(unifiedChatProvider.notifier)
+            .recordVoiceTurn(
+              userText: query,
+              assistantText: reply,
+              intent: action.intent,
+              savedMemory: action.savedMemory,
+              scheduledReminder: action.scheduledReminder,
+              savedTask: action.savedTask,
+              citations: action.citedMemories,
+              citedReminders: action.citedReminders,
+              citedTasks: action.citedTasks,
+            );
       } catch (e) {
-        debugPrint('[VoiceAssistantController] Failed to record in unified chat: $e');
+        debugPrint(
+          '[VoiceAssistantController] Failed to record in unified chat: $e',
+        );
       }
 
       state = state.copyWith(
@@ -291,22 +308,27 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   void _onTtsCompleted() {
     if (!state.isSpeaking) return;
 
-    // Transition back to listening for continuous natural conversation turns!
-    state = state.copyWith(
-      state: AssistantState.listening,
-      soundLevel: 0.0,
-    );
+    // One-shot mode (default): end the voice session cleanly without reopening the mic
+    if (!state.isContinuousMode) {
+      dismissSession();
+      return;
+    }
 
-    // Auto-listen for next turn
+    // Intentional continuous conversation mode: open one follow-up listening turn
+    // with a hard 7-second turn timeout that is NOT defeated by partial ambient noise.
     startListening();
 
-    // If no follow-up speech is detected after 7 seconds, transition gracefully to idle
     _continuousTurnTimer?.cancel();
     _continuousTurnTimer = Timer(const Duration(seconds: 7), () {
-      if (state.isListening && state.liveTranscript.isEmpty) {
+      if (state.isListening && !_hasDispatchedFinalForTurn) {
         dismissSession();
       }
     });
+  }
+
+  /// Toggle intentional continuous conversation mode
+  void setContinuousMode(bool enabled) {
+    state = state.copyWith(isContinuousMode: enabled);
   }
 
   /// Dismiss the active voice session and return to idle
@@ -348,7 +370,9 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
         return;
       }
     } catch (e) {
-      debugPrint('[VoiceAssistantController] Native background toggle error: $e');
+      debugPrint(
+        '[VoiceAssistantController] Native background toggle error: $e',
+      );
     }
 
     await _wakeWord.setEnabled(enabled);
@@ -376,6 +400,8 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   /// Speak a test sentence for settings preview
   Future<void> testVoiceOutput() async {
     state = state.copyWith(state: AssistantState.speaking);
-    await _tts.speak('Hi, I am Kee. Your Knowledge Extension Entity. How can I help you today?');
+    await _tts.speak(
+      'Hi, I am Kee. Your Knowledge Extension Entity. How can I help you today?',
+    );
   }
 }

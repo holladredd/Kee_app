@@ -54,7 +54,8 @@ class KeeConversationEngine {
   final ReminderRepository _reminderRepo;
   final NotificationService _notificationService;
   final RecallEngine _recallEngine;
-  final Future<Map<String, dynamic>> Function(String action, String target)? _deviceActionHandler;
+  final Future<Map<String, dynamic>> Function(String action, String target)?
+  _deviceActionHandler;
   final Uuid _uuid = const Uuid();
 
   KeeConversationEngine({
@@ -62,12 +63,14 @@ class KeeConversationEngine {
     required ReminderRepository reminderRepo,
     NotificationService? notificationService,
     RecallEngine? recallEngine,
-    Future<Map<String, dynamic>> Function(String action, String target)? deviceActionHandler,
-  })  : _memoryRepo = memoryRepo,
-        _reminderRepo = reminderRepo,
-        _notificationService = notificationService ?? NotificationService.instance,
-        _recallEngine = recallEngine ?? RecallEngine(),
-        _deviceActionHandler = deviceActionHandler;
+    Future<Map<String, dynamic>> Function(String action, String target)?
+    deviceActionHandler,
+  }) : _memoryRepo = memoryRepo,
+       _reminderRepo = reminderRepo,
+       _notificationService =
+           notificationService ?? NotificationService.instance,
+       _recallEngine = recallEngine ?? RecallEngine(),
+       _deviceActionHandler = deviceActionHandler;
 
   /// Process any natural-language user message (voice or typed).
   Future<ConversationAction> processMessage(String rawInput) async {
@@ -86,7 +89,8 @@ class KeeConversationEngine {
 
     if (text.isEmpty) {
       return const ConversationAction(
-        responseText: "I'm listening. Tell me something to remember or ask me anything you've saved.",
+        responseText:
+            "I'm listening. Tell me something to remember or ask me anything you've saved.",
         intent: MessageIntent.casualConversation,
       );
     }
@@ -135,7 +139,10 @@ class KeeConversationEngine {
 
     // ─── 4.5. DEVICE & APP ACTIONS (Open apps, Phone book, Make calls) ───
     if (!isExplicitSave) {
-      final deviceAction = await _tryHandleDeviceAction(effectiveText, effectiveLower);
+      final deviceAction = await _tryHandleDeviceAction(
+        effectiveText,
+        effectiveLower,
+      );
       if (deviceAction != null) return deviceAction;
     }
 
@@ -147,7 +154,8 @@ class KeeConversationEngine {
 
     // ─── 6. EXPLICIT REMINDER / APPOINTMENT / SCHEDULE INTENT ──────
     // e.g. "Remind me to call John tomorrow at 9 AM" or "I have an appointment Friday at 2 PM"
-    if (_isReminderIntent(effectiveLower) || _isScheduleOrAppointment(effectiveLower)) {
+    if (_isReminderIntent(effectiveLower) ||
+        _isScheduleOrAppointment(effectiveLower)) {
       return await _handleReminder(effectiveText);
     }
 
@@ -190,14 +198,20 @@ class KeeConversationEngine {
     );
   }
 
-  Future<ConversationAction?> _tryHandleDeviceAction(String text, String lower) async {
+  Future<ConversationAction?> _tryHandleDeviceAction(
+    String text,
+    String lower,
+  ) async {
     // Open app / phone book / contacts
     final openMatch = RegExp(
       r'^(?:please\s+)?(?:open|launch|start)\s+(?:my\s+|the\s+)?(.+)$',
       caseSensitive: false,
     ).firstMatch(text.trim());
     if (openMatch != null) {
-      final target = openMatch.group(1)!.replaceAll(RegExp(r'[.!?]+$'), '').trim();
+      final target = openMatch
+          .group(1)!
+          .replaceAll(RegExp(r'[.!?]+$'), '')
+          .trim();
       if (target.isNotEmpty) {
         if (_deviceActionHandler != null) {
           final res = await _deviceActionHandler('openApp', target);
@@ -220,7 +234,10 @@ class KeeConversationEngine {
       caseSensitive: false,
     ).firstMatch(text.trim());
     if (callMatch != null && !lower.contains('remind me')) {
-      final target = callMatch.group(1)!.replaceAll(RegExp(r'[.!?]+$'), '').trim();
+      final target = callMatch
+          .group(1)!
+          .replaceAll(RegExp(r'[.!?]+$'), '')
+          .trim();
       if (target.isNotEmpty) {
         if (_deviceActionHandler != null) {
           final res = await _deviceActionHandler('callContact', target);
@@ -273,7 +290,8 @@ class KeeConversationEngine {
     if (dateResult.dateTime == null) {
       final title = classification.title;
       return ConversationAction(
-        responseText: "When would you like to be reminded about '$title'? (e.g. tomorrow at 9 AM, in 2 hours, or Friday at 3 PM)",
+        responseText:
+            "When would you like to be reminded about '$title'? (e.g. tomorrow at 9 AM, in 2 hours, or Friday at 3 PM)",
         intent: MessageIntent.reminder,
         requiresClarification: true,
       );
@@ -285,7 +303,8 @@ class KeeConversationEngine {
 
     if (scheduledDate.isBefore(now)) {
       return ConversationAction(
-        responseText: "That time appears to be in the past (${DateFormat('MMM d, h:mm a').format(scheduledDate)}). When should I schedule it?",
+        responseText:
+            "That time appears to be in the past (${DateFormat('MMM d, h:mm a').format(scheduledDate)}). When should I schedule it?",
         intent: MessageIntent.reminder,
         requiresClarification: true,
       );
@@ -317,7 +336,8 @@ class KeeConversationEngine {
       title: title,
       priority: 'high',
       dueDate: scheduledDate,
-      dueTime: '${scheduledDate.hour.toString().padLeft(2, '0')}:${scheduledDate.minute.toString().padLeft(2, '0')}',
+      dueTime:
+          '${scheduledDate.hour.toString().padLeft(2, '0')}:${scheduledDate.minute.toString().padLeft(2, '0')}',
       createdAt: now,
       updatedAt: now,
     );
@@ -328,7 +348,8 @@ class KeeConversationEngine {
       id: memoryId,
       title: title,
       originalContent: text,
-      processedContent: 'Reminder scheduled for ${DateFormat('EEEE, MMM d, yyyy @ h:mm a').format(scheduledDate)}',
+      processedContent:
+          'Reminder scheduled for ${DateFormat('EEEE, MMM d, yyyy @ h:mm a').format(scheduledDate)}',
       memoryType: 'reminder',
       category: classification.category,
       tags: ['reminder', ...classification.tags],
@@ -340,7 +361,8 @@ class KeeConversationEngine {
     await _memoryRepo.createMemory(memory);
 
     // 4. Schedule local notification on device
-    final notificationId = scheduledDate.millisecondsSinceEpoch ~/ 1000 % 1000000;
+    final notificationId =
+        scheduledDate.millisecondsSinceEpoch ~/ 1000 % 1000000;
     await _notificationService.scheduleReminder(
       notificationId: notificationId,
       title: 'Kee Reminder',
@@ -349,10 +371,13 @@ class KeeConversationEngine {
     );
 
     final timeStr = DateFormat('EEEE, MMM d @ h:mm a').format(scheduledDate);
-    final recur = dateResult.recurrenceRule != null ? ' (recurring ${dateResult.recurrenceRule})' : '';
+    final recur = dateResult.recurrenceRule != null
+        ? ' (recurring ${dateResult.recurrenceRule})'
+        : '';
 
     return ConversationAction(
-      responseText: "I've set a reminder for **$title** on **$timeStr**$recur. I'll notify you on your device when it's time.",
+      responseText:
+          "I've set a reminder for **$title** on **$timeStr**$recur. I'll notify you on your device when it's time.",
       intent: MessageIntent.reminder,
       savedMemory: memory,
       scheduledReminder: reminder,
@@ -392,7 +417,8 @@ class KeeConversationEngine {
       );
       await _memoryRepo.updateMemory(updated);
       return ConversationAction(
-        responseText: "I've updated your preference for **${classification.title}**.",
+        responseText:
+            "I've updated your preference for **${classification.title}**.",
         intent: MessageIntent.preference,
         savedMemory: updated,
       );
@@ -412,7 +438,8 @@ class KeeConversationEngine {
     await _memoryRepo.createMemory(memory);
 
     return ConversationAction(
-      responseText: "Got it. I've remembered your preference: **${classification.title}**.",
+      responseText:
+          "Got it. I've remembered your preference: **${classification.title}**.",
       intent: MessageIntent.preference,
       savedMemory: memory,
     );
@@ -433,10 +460,12 @@ class KeeConversationEngine {
       if (m.memoryType == 'personal_preference') {
         final mLower = '${m.title} ${m.originalContent}'.toLowerCase();
         // Check for domain overlap (e.g. mode/theme, beverage, music)
-        if ((mLower.contains('mode') || mLower.contains('theme')) && (lower.contains('mode') || lower.contains('theme'))) {
+        if ((mLower.contains('mode') || mLower.contains('theme')) &&
+            (lower.contains('mode') || lower.contains('theme'))) {
           target = m;
           break;
-        } else if ((mLower.contains('coffee') || mLower.contains('tea')) && (lower.contains('coffee') || lower.contains('tea'))) {
+        } else if ((mLower.contains('coffee') || mLower.contains('tea')) &&
+            (lower.contains('coffee') || lower.contains('tea'))) {
           target = m;
           break;
         }
@@ -447,7 +476,8 @@ class KeeConversationEngine {
     String newTitle = classification.title;
     if (lower.contains('prefer light mode') || lower.contains('light mode')) {
       newTitle = 'Light mode';
-    } else if (lower.contains('prefer dark mode') || lower.contains('dark mode')) {
+    } else if (lower.contains('prefer dark mode') ||
+        lower.contains('dark mode')) {
       newTitle = 'Dark mode';
     }
 
@@ -500,7 +530,8 @@ class KeeConversationEngine {
         : "";
 
     return ConversationAction(
-      responseText: "I've made a note of **${classification.title}**$personNotice$dateNotice. I'll have it ready whenever you ask.",
+      responseText:
+          "I've made a note of **${classification.title}**$personNotice$dateNotice. I'll have it ready whenever you ask.",
       intent: MessageIntent.importantDate,
       savedMemory: memory,
     );
@@ -523,7 +554,8 @@ class KeeConversationEngine {
     await _memoryRepo.createMemory(memory);
 
     return ConversationAction(
-      responseText: "I've saved **${classification.title}** in your ideas & intentions. You can revisit it anytime.",
+      responseText:
+          "I've saved **${classification.title}** in your ideas & intentions. You can revisit it anytime.",
       intent: MessageIntent.idea,
       savedMemory: memory,
     );
@@ -559,7 +591,8 @@ class KeeConversationEngine {
     await _reminderRepo.createTask(task);
 
     return ConversationAction(
-      responseText: "I've saved **${classification.title}** to your commitments.",
+      responseText:
+          "I've saved **${classification.title}** to your commitments.",
       intent: MessageIntent.shoppingOrTask,
       savedMemory: memory,
       savedTask: task,
@@ -575,7 +608,9 @@ class KeeConversationEngine {
       id: memoryId,
       title: classification.title,
       originalContent: text,
-      memoryType: classification.memoryType == 'experience' ? 'experience' : 'personal_memory',
+      memoryType: classification.memoryType == 'experience'
+          ? 'experience'
+          : 'personal_memory',
       category: classification.category,
       tags: classification.tags,
       associatedPerson: classification.associatedPerson,
@@ -597,7 +632,9 @@ class KeeConversationEngine {
   // ─────────────────────────────────────────────────────────────
 
   bool _isCasualGreeting(String lower) {
-    return RegExp(r'^(hi|hello|hey|good morning|good afternoon|good evening|howdy|sup|greetings)(\s+kee)?[\.!]?$').hasMatch(lower) ||
+    return RegExp(
+          r'^(hi|hello|hey|good morning|good afternoon|good evening|howdy|sup|greetings)(\s+kee)?[\.!]?$',
+        ).hasMatch(lower) ||
         lower == 'who are you' ||
         lower == 'who are you?' ||
         lower == 'what can you do' ||
@@ -611,7 +648,9 @@ class KeeConversationEngine {
     if (lower.contains('thank')) {
       return "You're welcome. I'm here whenever you need to remember, schedule, or recall anything.";
     }
-    if (lower.contains('who are you') || lower.contains('what can you do') || lower.contains('help')) {
+    if (lower.contains('who are you') ||
+        lower.contains('what can you do') ||
+        lower.contains('help')) {
       return "I am Kee (Knowledge Extension Entity)—your personal AI memory assistant.\n\n"
           "You can simply talk to me:\n"
           "• Tell me things to remember: *'My birthday is March 12'*, *'I prefer dark mode'*, *'I met David at the tech summit'*\n"
@@ -623,11 +662,16 @@ class KeeConversationEngine {
   }
 
   bool _isGeneralChitchatQuestion(String lower) {
-    return RegExp(r'\b(weather|temperature|forecast|rain|snow|what time is it|current time|what day is it|tell me a joke|meaning of life)\b').hasMatch(lower);
+    return RegExp(
+      r'\b(weather|temperature|forecast|rain|snow|what time is it|current time|what day is it|tell me a joke|meaning of life)\b',
+    ).hasMatch(lower);
   }
 
   String _generateChitchatResponse(String lower) {
-    if (lower.contains('weather') || lower.contains('temperature') || lower.contains('forecast') || lower.contains('rain')) {
+    if (lower.contains('weather') ||
+        lower.contains('temperature') ||
+        lower.contains('forecast') ||
+        lower.contains('rain')) {
       return "I don't have access to live weather broadcasts, but I'm always ready to help you save memories, manage preferences, and schedule reminders.";
     }
     if (lower.contains('time') || lower.contains('day')) {
@@ -641,20 +685,28 @@ class KeeConversationEngine {
   }
 
   bool _isPreferenceUpdate(String lower) {
-    return RegExp(r"\b(no longer prefer|don'?t like .* anymore|change my preference|actually .* prefer|instead of .* i prefer)\b").hasMatch(lower);
+    return RegExp(
+      r"\b(no longer prefer|don'?t like .* anymore|change my preference|actually .* prefer|instead of .* i prefer)\b",
+    ).hasMatch(lower);
   }
 
   bool _isQueryIntent(String lower) {
     return lower.endsWith('?') ||
-        RegExp(r'\b(what did i|what was|what are my|what do i have|which|when is|who is|where did|did i|have i|tell me about|recall|search)\b').hasMatch(lower);
+        RegExp(
+          r'\b(what did i|what was|what are my|what do i have|which|when is|who is|where did|did i|have i|tell me about|recall|search)\b',
+        ).hasMatch(lower);
   }
 
   bool _isReminderIntent(String lower) {
-    return RegExp(r"\b(remind me|alert me to|notify me|set a reminder|don'?t forget to)\b").hasMatch(lower);
+    return RegExp(
+      r"\b(remind me|alert me to|notify me|set a reminder|don'?t forget to)\b",
+    ).hasMatch(lower);
   }
 
   bool _isScheduleOrAppointment(String lower) {
-    return RegExp(r'\b(appointment|schedule|meeting with|doctor.?s? visit|dentist|flight at|interview)\b').hasMatch(lower);
+    return RegExp(
+      r'\b(appointment|schedule|meeting with|doctor.?s? visit|dentist|flight at|interview)\b',
+    ).hasMatch(lower);
   }
 
   bool _isPersonalExperienceOrFact(String lower) {
@@ -664,18 +716,26 @@ class KeeConversationEngine {
   }
 
   bool _isPreferenceIntent(String lower) {
-    return RegExp(r'\b(i prefer|my preference|i always like|i love|i hate|i dislike|my favorite|my favourite)\b').hasMatch(lower);
+    return RegExp(
+      r'\b(i prefer|my preference|i always like|i love|i hate|i dislike|my favorite|my favourite)\b',
+    ).hasMatch(lower);
   }
 
   bool _isImportantDateOrFact(String lower) {
-    return RegExp(r'\b(birthday|anniversary|warranty|renewal|contract ends|expires?|due date)\b').hasMatch(lower);
+    return RegExp(
+      r'\b(birthday|anniversary|warranty|renewal|contract ends|expires?|due date)\b',
+    ).hasMatch(lower);
   }
 
   bool _isIdeaOrIntentionIntent(String lower) {
-    return RegExp(r'\b(want to buy|thinking of buying|planning to buy|considering buying|idea for|what if we|thought about making|concept for|brainstorm)\b').hasMatch(lower);
+    return RegExp(
+      r'\b(want to buy|thinking of buying|planning to buy|considering buying|idea for|what if we|thought about making|concept for|brainstorm)\b',
+    ).hasMatch(lower);
   }
 
   bool _isShoppingOrTaskIntent(String lower) {
-    return RegExp(r'\b(need to buy|must buy|pick up from store|shopping list|groceries|need to|have to|must)\b').hasMatch(lower);
+    return RegExp(
+      r'\b(need to buy|must buy|pick up from store|shopping list|groceries|need to|have to|must)\b',
+    ).hasMatch(lower);
   }
 }

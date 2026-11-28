@@ -15,6 +15,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import android.view.*
 import android.widget.*
 import androidx.core.app.NotificationCompat
@@ -62,6 +63,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private var isProcessingRequest = false
     private var isSpeaking = false
     private var consecutiveErrors = 0
+    private var lastWakeActivationMs = 0L
+    private val wakeCooldownMs = 2500L
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val restartRunnable = Runnable {
@@ -69,35 +72,11 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             startWakeWordListening()
         }
     }
+    // Primary wake phrase only ("Hi Kee"; "hi key" included solely as phonetic
+    // equivalent for Vosk's standard English dictionary). No short matches.
     private val wakeWords = listOf(
-        "what's up key",
-        "what's up kee",
-        "what's up kay",
-        "what's up k",
-        "whats up key",
-        "whats up kee",
-        "whats up kay",
-        "whats up k",
-        "what up key",
-        "what up kee",
-        "what up kay",
-        "what up k",
-        "hi key",
         "hi kee",
-        "hey key",
-        "hey kee",
-        "hello key",
-        "hello kee",
-        "ok key",
-        "ok kee",
-        "hi kay",
-        "hi k",
-        "hey kay",
-        "hey k",
-        "ok kay",
-        "ok k",
-        "key",
-        "kee"
+        "hi key"
     )
 
     // UI elements in floating overlay
@@ -171,7 +150,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Kee is running in background")
-            .setContentText("Say \"Hi Kee\" or \"What's up K\" anytime")
+            .setContentText("Say \"Hi Kee\" anytime")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -225,69 +204,85 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun initVoskWakeWord() {
         if (voskModel != null || isVoskLoading) return
-        if (!KeeWakeWordModelManager.isModelReady(this)) return
+        if (!KeeWakeWordModelManager.isModelReady(this)) {
+            Log.w("KeeVoiceService", "Vosk wake-word model not found on disk; cannot start offline wake-word engine.")
+            return
+        }
 
         isVoskLoading = true
+        Log.d("KeeVoiceService", "Loading Vosk offline wake-word model...")
         Thread {
             try {
                 val modelDir = KeeWakeWordModelManager.getModelDir(this)
                 val model = Model(modelDir.absolutePath)
                 voskModel = model
-                // Grammar-constrained recognizer using standard English lexicon words ("key"/"kay" + "kee"/"k")
-                val grammar = """["what's up key", "what's up kee", "what's up kay", "what's up k", "what up key", "what up kay", "hi key", "hi kee", "hey key", "hey kee", "hello key", "hello kee", "ok key", "ok kee", "hi kay", "hey kay", "ok kay", "key", "[unk]"]"""
+                // Grammar-constrained recognizer restricted to primary wake phrase ("Hi Kee")
+                val grammar = """["hi kee", "hi key", "[unk]"]"""
                 val recognizer = Recognizer(model, 16000.0f, grammar)
                 voskSpeechService = VoskSpeechService(recognizer, 16000.0f)
                 isVoskLoading = false
+                Log.i("KeeVoiceService", "Vosk wake-word model loaded successfully.")
 
                 if (isRunning && !isPaused && !isOverlayShowing && isListeningForWakeWord) {
                     mainHandler.post { startWakeWordListening() }
                 }
             } catch (e: Exception) {
                 isVoskLoading = false
-                e.printStackTrace()
+                Log.e("KeeVoiceService", "Failed to load Vosk wake-word model: ${e.message}", e)
             }
         }.start()
     }
 
     private val voskListener = object : VoskRecognitionListener {
         override fun onPartialResult(hypothesis: String?) {
-            handleVoskHypothesis(hypothesis, false)
+            // Deliberately ignore partial results to prevent false activations from ambient speech.
         }
 
         override fun onResult(hypothesis: String?) {
-            handleVoskHypothesis(hypothesis, true)
+            handleVoskHypothesis(hypothesis)
         }
 
         override fun onFinalResult(hypothesis: String?) {
-            handleVoskHypothesis(hypothesis, true)
+            handleVoskHypothesis(hypothesis)
         }
 
         override fun onError(exception: Exception?) {
+            Log.e("KeeVoiceService", "Vosk recognition error: ${exception?.message}", exception)
             isVoskListening = false
         }
 
         override fun onTimeout() {
+            Log.d("KeeVoiceService", "Vosk recognition timeout")
             isVoskListening = false
         }
     }
 
-    private fun handleVoskHypothesis(hypothesis: String?, isFinal: Boolean) {
-        if (!isListeningForWakeWord || isPaused || isOverlayShowing || hypothesis.isNullOrBlank()) return
+    private fun handleVoskHypothesis(hypothesis: String?) {
+        if (!isListeningForWakeWord || isPaused || isOverlayShowing || isProcessingRequest || isSpeaking || hypothesis.isNullOrBlank()) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastWakeActivationMs < wakeCooldownMs) {
+            return
+        }
         try {
             val json = JSONObject(hypothesis)
-            val raw = json.optString("partial", "").ifEmpty { json.optString("text", "") }
+            val raw = json.optString("text", "")
             val cleaned = raw.replace("[unk]", "").trim().lowercase(Locale.ROOT)
             if (cleaned.isEmpty()) return
 
             for (wakeWord in wakeWords) {
                 val pattern = Regex("\\b${Regex.escape(wakeWord)}\\b")
                 if (pattern.containsMatchIn(cleaned)) {
+                    lastWakeActivationMs = now
+                    Log.i("KeeVoiceService", "Confirmed final wake phrase detected: \"$wakeWord\"")
                     stopVoskListening()
                     triggerWakeWordDetected(cleaned, wakeWord)
                     return
                 }
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w("KeeVoiceService", "Failed to parse Vosk hypothesis: ${e.message}")
         }
     }
 
@@ -419,8 +414,9 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 }
             }
         } else {
-            // Fallback response if Flutter engine is unattached
-            val fallback = "I've noted: $query. You can review it inside Kee."
+            // Fallback response if Flutter engine is unattached (never claim data was saved)
+            Log.w("KeeVoiceService", "queryHandler unavailable for query: $query")
+            val fallback = "Kee is not connected right now. Please open the Kee app and try again."
             mainHandler.post {
                 displayAndSpeakResponse(fallback)
             }
@@ -429,15 +425,20 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun displayAndSpeakResponse(reply: String) {
         isProcessingRequest = false
-        isSpeaking = true
-
-        updateOverlayState("Kee Speaking", "#34D399", "Interrupt")
         tvTranscript?.text = reply
 
         // Speak reply using native Android TTS
         if (isTtsReady && tts != null) {
-            tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "KEE_REPLY")
+            val res = tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "KEE_REPLY")
+            if (res == TextToSpeech.SUCCESS) {
+                isSpeaking = true
+                updateOverlayState("Kee Speaking", "#34D399", "Interrupt")
+                return
+            }
         }
+
+        isSpeaking = false
+        updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
     }
 
     private fun updateOverlayState(statusText: String, accentHex: String, micLabel: String) {
@@ -740,7 +741,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         dismissOverlay()
     }
 
-    fun dismissOverlay() {
+    fun dismissOverlay(resumeWakeWord: Boolean = true) {
         if (overlayView != null && windowManager != null) {
             try {
                 windowManager?.removeView(overlayView)
@@ -749,12 +750,15 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             isOverlayShowing = false
         }
 
-        // Interrupt TTS if active
+        // Interrupt TTS & speech recognition if active
         tts?.stop()
         isSpeaking = false
+        mainHandler.post { speechRecognizer?.cancel() }
 
-        // Resume background wake word listening
-        startWakeWordListening()
+        // Resume background wake word listening only if service remains active
+        if (resumeWakeWord && isRunning && !isPaused) {
+            startWakeWordListening()
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -771,21 +775,31 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 }
                 override fun onDone(utteranceId: String?) {
                     isSpeaking = false
-                    mainHandler.postDelayed({
+                    // One-shot overlay response complete: do NOT reopen the mic automatically.
+                    // User can tap Speak for another turn or close the overlay.
+                    mainHandler.post {
                         if (isOverlayShowing && !isProcessingRequest) {
-                            startListeningForUserQuery()
+                            updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
                         }
-                    }, 400)
+                    }
                 }
                 override fun onError(utteranceId: String?) {
                     isSpeaking = false
+                    mainHandler.post {
+                        if (isOverlayShowing && !isProcessingRequest) {
+                            updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
+                        }
+                    }
                 }
             })
             isTtsReady = true
+        } else {
+            Log.e("KeeVoiceService", "TextToSpeech initialization failed with status: $status")
         }
     }
 
     override fun onDestroy() {
+        Log.i("KeeVoiceService", "Destroying KeeBackgroundVoiceService")
         isRunning = false
         isPaused = true
         mainHandler.removeCallbacksAndMessages(null)
@@ -794,7 +808,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             voskSpeechService?.shutdown()
             voskModel?.close()
         } catch (_: Exception) {}
-        dismissOverlay()
+        dismissOverlay(resumeWakeWord = false)
         speechRecognizer?.destroy()
         tts?.shutdown()
         super.onDestroy()

@@ -29,12 +29,12 @@ class SettingsScreen extends ConsumerWidget {
     final voiceCtrl = ref.read(voiceAssistantProvider.notifier);
     final wakeWord = ref.watch(wakeWordServiceProvider);
     final isDark = theme.brightness == Brightness.dark;
-    final accentColor = isDark ? const Color(0xFFE8D0B2) : const Color(0xFFA6855B);
+    final accentColor = isDark
+        ? const Color(0xFFE8D0B2)
+        : const Color(0xFFA6855B);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
@@ -49,24 +49,48 @@ class SettingsScreen extends ConsumerWidget {
               children: [
                 SwitchListTile(
                   secondary: Icon(
-                    assistant.isHandsFreeEnabled ? Icons.mic_rounded : Icons.mic_off_rounded,
+                    assistant.isHandsFreeEnabled
+                        ? Icons.mic_rounded
+                        : Icons.mic_off_rounded,
                     color: assistant.isHandsFreeEnabled ? accentColor : null,
                   ),
-                  title: const Text('Wake Word ("Hi Kee" / "What\'s up K")'),
-                  subtitle: const Text('Wake up Kee hands-free by saying "Hi Kee" or "What\'s up K"'),
+                  title: const Text('Wake Word ("Hi Kee")'),
+                  subtitle: const Text(
+                    'Wake up Kee hands-free by saying "Hi Kee"',
+                  ),
                   value: assistant.isHandsFreeEnabled,
                   onChanged: (val) async {
                     if (val) {
-                      final ready = await ref.read(nativeVoiceBridgeProvider).ensureHandsFreeReady(context);
+                      final ready = await ref
+                          .read(nativeVoiceBridgeProvider)
+                          .ensureHandsFreeReady(context);
                       if (!ready) return;
                     }
                     await voiceCtrl.toggleHandsFree(val);
                   },
                 ),
+                const Divider(height: 1),
+                SwitchListTile(
+                  secondary: Icon(
+                    Icons.forum_rounded,
+                    color: assistant.isContinuousMode ? accentColor : null,
+                  ),
+                  title: const Text('Continuous Conversation'),
+                  subtitle: const Text(
+                    'Keep listening for a follow-up turn after Kee finishes speaking',
+                  ),
+                  value: assistant.isContinuousMode,
+                  onChanged: (val) {
+                    voiceCtrl.setContinuousMode(val);
+                  },
+                ),
                 if (assistant.isHandsFreeEnabled) ...[
                   const Divider(height: 1),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -82,12 +106,17 @@ class SettingsScreen extends ConsumerWidget {
                         _buildListeningModeOption(
                           context: context,
                           title: 'In-App Only (Recommended)',
-                          subtitle: 'Listens for "Hi Kee" or "What\'s up K" while the app is active. Highly battery-efficient.',
-                          isSelected: wakeWord.listeningMode == WakeWordListeningMode.inAppOnly,
+                          subtitle:
+                              'Listens for "Hi Kee" or "What\'s up K" while the app is active. Highly battery-efficient.',
+                          isSelected:
+                              wakeWord.listeningMode ==
+                              WakeWordListeningMode.inAppOnly,
                           accentColor: accentColor,
                           isDark: isDark,
                           onTap: () {
-                            wakeWord.setListeningMode(WakeWordListeningMode.inAppOnly);
+                            wakeWord.setListeningMode(
+                              WakeWordListeningMode.inAppOnly,
+                            );
                             (context as Element).markNeedsBuild();
                           },
                         ),
@@ -95,12 +124,17 @@ class SettingsScreen extends ConsumerWidget {
                         _buildListeningModeOption(
                           context: context,
                           title: 'Background Service',
-                          subtitle: 'Keeps listening service running with a foreground notification. Subject to Android OS battery restrictions and OS termination.',
-                          isSelected: wakeWord.listeningMode == WakeWordListeningMode.foregroundService,
+                          subtitle:
+                              'Keeps listening service running with a foreground notification. Subject to Android OS battery restrictions and OS termination.',
+                          isSelected:
+                              wakeWord.listeningMode ==
+                              WakeWordListeningMode.foregroundService,
                           accentColor: accentColor,
                           isDark: isDark,
                           onTap: () {
-                            wakeWord.setListeningMode(WakeWordListeningMode.foregroundService);
+                            wakeWord.setListeningMode(
+                              WakeWordListeningMode.foregroundService,
+                            );
                             (context as Element).markNeedsBuild();
                           },
                         ),
@@ -108,19 +142,31 @@ class SettingsScreen extends ConsumerWidget {
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: isDark ? Colors.black26 : const Color(0xFFF3ECE1),
+                            color: isDark
+                                ? Colors.black26
+                                : const Color(0xFFF3ECE1),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: accentColor.withValues(alpha: 0.25)),
+                            border: Border.all(
+                              color: accentColor.withValues(alpha: 0.25),
+                            ),
                           ),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.info_outline_rounded, size: 16, color: accentColor),
+                              Icon(
+                                Icons.info_outline_rounded,
+                                size: 16,
+                                color: accentColor,
+                              ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   'Android Background Note: Android restricts continuous mic capture if battery optimization is enabled or if the app is force-stopped. For 100% reliability, in-app wake or tapping the floating orb is always available.',
-                                  style: TextStyle(fontSize: 11, height: 1.35, color: theme.colorScheme.onSurfaceVariant),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    height: 1.35,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
                                 ),
                               ),
                             ],
@@ -164,7 +210,9 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.record_voice_over_rounded),
                   title: const Text('Test Voice Output'),
-                  subtitle: const Text('Preview how Kee sounds with your current settings'),
+                  subtitle: const Text(
+                    'Preview how Kee sounds with your current settings',
+                  ),
                   trailing: ElevatedButton.icon(
                     icon: const Icon(Icons.play_arrow_rounded, size: 18),
                     label: const Text('Play'),
@@ -178,7 +226,11 @@ class SettingsScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(AppSpacing.md),
                   child: Row(
                     children: [
-                      const Icon(Icons.security_rounded, size: 16, color: Color(0xFF81C784)),
+                      const Icon(
+                        Icons.security_rounded,
+                        size: 16,
+                        color: Color(0xFF81C784),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -210,16 +262,25 @@ class SettingsScreen extends ConsumerWidget {
                     themeMode == ThemeMode.system
                         ? 'Follow System'
                         : themeMode == ThemeMode.dark
-                            ? 'Dark Mode'
-                            : 'Light Mode',
+                        ? 'Dark Mode'
+                        : 'Light Mode',
                   ),
                   trailing: DropdownButton<ThemeMode>(
                     value: themeMode,
                     underline: const SizedBox(),
                     items: const [
-                      DropdownMenuItem(value: ThemeMode.system, child: Text('System')),
-                      DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
-                      DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
+                      DropdownMenuItem(
+                        value: ThemeMode.system,
+                        child: Text('System'),
+                      ),
+                      DropdownMenuItem(
+                        value: ThemeMode.light,
+                        child: Text('Light'),
+                      ),
+                      DropdownMenuItem(
+                        value: ThemeMode.dark,
+                        child: Text('Dark'),
+                      ),
                     ],
                     onChanged: (val) {
                       if (val != null) {
@@ -241,14 +302,21 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.notifications_active_outlined),
                   title: const Text('Device Notification Permissions'),
-                  subtitle: const Text('Required to deliver background reminder notifications'),
+                  subtitle: const Text(
+                    'Required to deliver background reminder notifications',
+                  ),
                   trailing: ElevatedButton(
                     onPressed: () async {
-                      final granted = await NotificationService.instance.requestPermissions();
+                      final granted = await NotificationService.instance
+                          .requestPermissions();
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text(granted ? 'Notifications are active and permitted' : 'Notification check completed'),
+                            content: Text(
+                              granted
+                                  ? 'Notifications are active and permitted'
+                                  : 'Notification check completed',
+                            ),
                           ),
                         );
                       }
@@ -260,28 +328,42 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.notification_important_outlined),
                   title: const Text('Send Test Reminder'),
-                  subtitle: const Text('Test device alarm notification delivery (triggers in 5s)'),
+                  subtitle: const Text(
+                    'Test device alarm notification delivery (triggers in 5s)',
+                  ),
                   trailing: const Icon(Icons.send_rounded, size: 20),
                   onTap: () async {
-                    final granted = await NotificationService.instance.requestPermissions();
+                    final granted = await NotificationService.instance
+                        .requestPermissions();
                     if (!granted) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Please enable notification permissions first.')),
+                          const SnackBar(
+                            content: Text(
+                              'Please enable notification permissions first.',
+                            ),
+                          ),
                         );
                       }
                       return;
                     }
-                    final testDate = DateTime.now().add(const Duration(seconds: 5));
+                    final testDate = DateTime.now().add(
+                      const Duration(seconds: 5),
+                    );
                     await NotificationService.instance.scheduleReminder(
                       notificationId: 99999,
                       title: 'Kee Test Reminder',
-                      body: 'Your device notification channel is functioning properly.',
+                      body:
+                          'Your device notification channel is functioning properly.',
                       scheduledDate: testDate,
                     );
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Test notification scheduled for 5 seconds from now.')),
+                        const SnackBar(
+                          content: Text(
+                            'Test notification scheduled for 5 seconds from now.',
+                          ),
+                        ),
                       );
                     }
                   },
@@ -290,7 +372,9 @@ class SettingsScreen extends ConsumerWidget {
                 const ListTile(
                   leading: Icon(Icons.volume_up_outlined),
                   title: Text('Sound & Vibration'),
-                  subtitle: Text('High-priority alert channel with vibration enabled'),
+                  subtitle: Text(
+                    'High-priority alert channel with vibration enabled',
+                  ),
                 ),
               ],
             ),
@@ -305,7 +389,9 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.auto_stories_outlined),
                   title: const Text('Review Saved Memories'),
-                  subtitle: const Text('Inspect, search, or delete stored personal memories'),
+                  subtitle: const Text(
+                    'Inspect, search, or delete stored personal memories',
+                  ),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => context.push('/memories'),
                 ),
@@ -313,7 +399,9 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.alarm_outlined),
                   title: const Text('Manage Scheduled Reminders'),
-                  subtitle: const Text('View active alarms, toggle or remove reminders'),
+                  subtitle: const Text(
+                    'View active alarms, toggle or remove reminders',
+                  ),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => context.push('/reminders'),
                 ),
@@ -321,11 +409,19 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.file_download_outlined),
                   title: const Text('Export Local Data (JSON)'),
-                  subtitle: const Text('Back up all memories, tasks, and reminders to a file'),
+                  subtitle: const Text(
+                    'Back up all memories, tasks, and reminders to a file',
+                  ),
                   onTap: () async {
-                    final memories = await ref.read(memoryRepositoryProvider).getAllMemories();
-                    final tasks = await ref.read(reminderRepositoryProvider).getTasks();
-                    final reminders = await ref.read(reminderRepositoryProvider).getReminders();
+                    final memories = await ref
+                        .read(memoryRepositoryProvider)
+                        .getAllMemories();
+                    final tasks = await ref
+                        .read(reminderRepositoryProvider)
+                        .getTasks();
+                    final reminders = await ref
+                        .read(reminderRepositoryProvider)
+                        .getReminders();
 
                     final exportData = {
                       'app': 'Kee',
@@ -336,30 +432,36 @@ class SettingsScreen extends ConsumerWidget {
                       'reminders': reminders.map((r) => r.toMap()).toList(),
                     };
 
-                    final jsonStr = const JsonEncoder.withIndent('  ').convert(exportData);
+                    final jsonStr = const JsonEncoder.withIndent(
+                      '  ',
+                    ).convert(exportData);
                     await SharePlus.instance.share(
-                      ShareParams(
-                        text: jsonStr,
-                        subject: 'Kee Backup Data',
-                      ),
+                      ShareParams(text: jsonStr, subject: 'Kee Backup Data'),
                     );
                   },
                 ),
                 const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.delete_outline_rounded, color: theme.colorScheme.error),
+                  leading: Icon(
+                    Icons.delete_outline_rounded,
+                    color: theme.colorScheme.error,
+                  ),
                   title: Text(
                     'Clear All Local Memory Data',
                     style: TextStyle(color: theme.colorScheme.error),
                   ),
-                  subtitle: const Text('Wipes local memories, tasks, and reminders'),
+                  subtitle: const Text(
+                    'Wipes local memories, tasks, and reminders',
+                  ),
                   onTap: () => _showClearDataConfirmation(context, ref),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: const Icon(Icons.security_rounded),
                   title: const Text('Privacy & Offline Guarantee'),
-                  subtitle: const Text('Your memories stay on your device. Zero external data tracking.'),
+                  subtitle: const Text(
+                    'Your memories stay on your device. Zero external data tracking.',
+                  ),
                   onTap: () {
                     showDialog(
                       context: context,
@@ -373,7 +475,10 @@ class SettingsScreen extends ConsumerWidget {
                           '5. All classification and recall runs locally.',
                         ),
                         actions: [
-                          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Got it')),
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: const Text('Got it'),
+                          ),
                         ],
                       ),
                     );
@@ -394,7 +499,10 @@ class SettingsScreen extends ConsumerWidget {
                   title: const Text('Current Processing Engine'),
                   subtitle: Text(aiEngine.name),
                   trailing: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.green.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
@@ -413,8 +521,14 @@ class SettingsScreen extends ConsumerWidget {
                 const ListTile(
                   leading: Icon(Icons.bolt_rounded),
                   title: Text('Deterministic Intent Classifier'),
-                  subtitle: Text('Fast, zero-latency rule classification & natural-language date parsing'),
-                  trailing: Icon(Icons.check_circle_rounded, color: Colors.green, size: 20),
+                  subtitle: Text(
+                    'Fast, zero-latency rule classification & natural-language date parsing',
+                  ),
+                  trailing: Icon(
+                    Icons.check_circle_rounded,
+                    color: Colors.green,
+                    size: 20,
+                  ),
                 ),
               ],
             ),
@@ -430,7 +544,8 @@ class SettingsScreen extends ConsumerWidget {
                   leading: const Icon(Icons.person_outline_rounded),
                   title: const Text('Signed in as'),
                   subtitle: Text(
-                    ref.watch(currentUserProvider)?.email ?? 'Local Offline Mode',
+                    ref.watch(currentUserProvider)?.email ??
+                        'Local Offline Mode',
                   ),
                 ),
                 const Divider(height: 1),
@@ -474,8 +589,13 @@ class SettingsScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.info_outline_rounded),
                   title: const Text('Brand Philosophy & Introduction'),
-                  subtitle: const Text('Review what Kee is and how it extends your memory'),
-                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                  subtitle: const Text(
+                    'Review what Kee is and how it extends your memory',
+                  ),
+                  trailing: const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 14,
+                  ),
                   onTap: () => KeeOnboardingSheet.show(context, isReview: true),
                 ),
                 const Divider(height: 1),
@@ -531,13 +651,18 @@ class SettingsScreen extends ConsumerWidget {
               ref.invalidate(tasksStreamProvider);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('All local memory data has been cleared.')),
+                  const SnackBar(
+                    content: Text('All local memory data has been cleared.'),
+                  ),
                 );
               }
             },
             child: Text(
               'Delete Everything',
-              style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: theme.colorScheme.error,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -559,11 +684,7 @@ class SettingsScreen extends ConsumerWidget {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         ),
-        icon: Icon(
-          Icons.logout_rounded,
-          color: accentColor,
-          size: 40,
-        ),
+        icon: Icon(Icons.logout_rounded, color: accentColor, size: 40),
         title: Text(
           'Sign Out?',
           style: TextStyle(
@@ -585,9 +706,7 @@ class SettingsScreen extends ConsumerWidget {
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(
               'Cancel',
-              style: TextStyle(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
             ),
           ),
           TextButton(
@@ -628,7 +747,9 @@ class SettingsScreen extends ConsumerWidget {
         decoration: BoxDecoration(
           color: isSelected
               ? accentColor.withValues(alpha: 0.12)
-              : (isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.02)),
+              : (isDark
+                    ? Colors.white.withValues(alpha: 0.04)
+                    : Colors.black.withValues(alpha: 0.02)),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isSelected
@@ -639,7 +760,9 @@ class SettingsScreen extends ConsumerWidget {
         child: Row(
           children: [
             Icon(
-              isSelected ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded,
+              isSelected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
               color: isSelected ? accentColor : Colors.grey,
               size: 20,
             ),
@@ -652,7 +775,9 @@ class SettingsScreen extends ConsumerWidget {
                     title,
                     style: TextStyle(
                       fontSize: 14,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.w500,
                       color: isSelected ? accentColor : null,
                     ),
                   ),

@@ -3,10 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'speech_recognition_service.dart';
 
-enum WakeWordListeningMode {
-  inAppOnly,
-  foregroundService,
-}
+enum WakeWordListeningMode { inAppOnly, foregroundService }
 
 class WakeWordService {
   static final WakeWordService _instance = WakeWordService._internal();
@@ -20,25 +17,12 @@ class WakeWordService {
   bool _isListeningForWakeWord = false;
   bool _isAssistantActive = false;
   Timer? _restartTimer;
+  DateTime? _lastActivationAt;
+  static const Duration _activationCooldown = Duration(milliseconds: 2500);
 
   Function(String matchedPhrase, String? immediateQuery)? onWakeWordDetected;
 
-  static const List<String> _wakeWords = [
-    "what's up kee",
-    'whats up kee',
-    "what's up k",
-    'whats up k',
-    'what up kee',
-    'what up k',
-    'hi kee',
-    'hey kee',
-    'hello kee',
-    'ok kee',
-    'hi k',
-    'hey k',
-    'ok k',
-    'kee',
-  ];
+  static const List<String> _wakeWords = ['hi kee'];
 
   bool get isEnabled => _isEnabled;
   WakeWordListeningMode get listeningMode => _listeningMode;
@@ -82,14 +66,18 @@ class WakeWordService {
     // We disable background wake-word polling on web to prevent InvalidStateError
     // collisions with the active voice assistant.
     if (kIsWeb) {
-      debugPrint('[WakeWordService] Background wake-word monitoring is disabled on web.');
+      debugPrint(
+        '[WakeWordService] Background wake-word monitoring is disabled on web.',
+      );
       return;
     }
 
     try {
       final hasPermission = await _speechService.initialize();
       if (!hasPermission) {
-        debugPrint('[WakeWordService] Microphone permission not available for wake word');
+        debugPrint(
+          '[WakeWordService] Microphone permission not available for wake word',
+        );
         return;
       }
 
@@ -99,7 +87,7 @@ class WakeWordService {
         listenFor: const Duration(seconds: 20),
         pauseFor: const Duration(seconds: 4),
         onResult: (text, isFinal) {
-          _analyzeSpokenText(text);
+          _analyzeSpokenText(text, isFinal);
         },
       );
     } catch (e) {
@@ -109,21 +97,38 @@ class WakeWordService {
     }
   }
 
-  void _analyzeSpokenText(String text) {
-    final lower = text.trim().toLowerCase();
-    if (lower.isEmpty) return;
+  void _analyzeSpokenText(String text, bool isFinal) {
+    // Only activate on confirmed final recognition results to prevent partial false triggers
+    if (!isFinal || _isAssistantActive) return;
+
+    final now = DateTime.now();
+    if (_lastActivationAt != null &&
+        now.difference(_lastActivationAt!) < _activationCooldown) {
+      return;
+    }
+
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
 
     for (final wakeWord in _wakeWords) {
-      if (lower.contains(wakeWord)) {
-        // Found wake word! Extract any subsequent query uttered in the same breath
-        final index = lower.indexOf(wakeWord);
+      final match = RegExp(
+        '\\b${RegExp.escape(wakeWord)}\\b',
+        caseSensitive: false,
+      ).firstMatch(trimmed);
+      if (match != null) {
+        _lastActivationAt = now;
         String? immediateQuery;
-        final remainder = lower.substring(index + wakeWord.length).trim();
+        final remainder = trimmed
+            .substring(match.end)
+            .replaceFirst(RegExp(r'^[,\s!]+'), '')
+            .trim();
         if (remainder.isNotEmpty) {
           immediateQuery = remainder;
         }
 
-        debugPrint('[WakeWordService] Wake word detected: "$wakeWord" (query: "$immediateQuery")');
+        debugPrint(
+          '[WakeWordService] Wake word detected: "$wakeWord" (query: "$immediateQuery")',
+        );
         _triggerActivation(wakeWord, immediateQuery);
         return;
       }
