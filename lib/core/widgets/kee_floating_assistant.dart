@@ -6,6 +6,17 @@ import '../voice/assistant_state.dart';
 import '../voice/voice_assistant_controller.dart';
 import 'kee_voice_orb.dart';
 
+// Official Kee brand palette — mirrors _KeeBrand in kee_voice_orb.dart
+class _KB {
+  static const Color obsidian    = Color(0xFF080808);
+  static const Color warmIvory   = Color(0xFFF3F0E8);
+  static const Color softGrey    = Color(0xFF77736B);
+  static const Color lightAccent = Color(0xFFD8D2C5);
+  static const Color surface     = Color(0xFF111110);
+  static const Color border      = Color(0xFF242220);
+  static const Color errorRose   = Color(0xFFD97070);
+}
+
 /// Floating AI Assistant Widget for Kee.
 /// Appears everywhere across the entire application.
 /// When clicked, it does NOT navigate away; instead, it opens the interactive
@@ -52,19 +63,19 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
       return const SizedBox.shrink();
     }
 
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final accentColor = isDark ? const Color(0xFFE8D0B2) : const Color(0xFFA6855B);
-
     final safeCtrl = controller;
     final safeAssistant = assistant;
 
-    // If expanded, show the in-place AI bubble overlay
+    // If expanded, show the full-screen Kee-branded panel
     if (safeAssistant.isExpanded) {
-      return _buildExpandedOverlay(context, safeAssistant, safeCtrl, theme, accentColor, isDark);
+      return _buildExpandedOverlay(context, safeAssistant, safeCtrl);
     }
 
-    // Compact floating assistant button (stays pinned on screen)
+    // ── Compact floating pill ─────────────────────────────────────────────────
+    final isActive = safeAssistant.isListening ||
+        safeAssistant.isProcessing ||
+        safeAssistant.isSpeaking;
+
     return Positioned(
       right: AppSpacing.md,
       bottom: AppSpacing.xl,
@@ -73,29 +84,32 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
         child: InkWell(
           borderRadius: BorderRadius.circular(40),
           onTap: () {
-            // Open the AI bubble in-place without navigating away
             safeCtrl.setExpanded(true);
-            if (safeAssistant.isIdle) {
-              safeCtrl.startListening();
-            }
+            if (safeAssistant.isIdle) safeCtrl.startListening();
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF14120E) : const Color(0xFFFBF8F4),
+              // Always use the dark Kee canvas for the pill — looks premium on
+              // both light and dark host screens.
+              color: _KB.obsidian,
               borderRadius: BorderRadius.circular(32),
               border: Border.all(
-                color: safeAssistant.isListening
-                    ? accentColor
-                    : (isDark ? const Color(0xFF2E271F) : const Color(0xFFE2D6C5)),
-                width: safeAssistant.isListening ? 1.5 : 1.0,
+                color: isActive ? _KB.warmIvory : _KB.border,
+                width: isActive ? 1.5 : 1.0,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.12),
-                  blurRadius: 16,
+                  color: Colors.black.withValues(alpha: 0.55),
+                  blurRadius: 18,
                   offset: const Offset(0, 4),
                 ),
+                if (isActive)
+                  BoxShadow(
+                    color: _KB.warmIvory.withValues(alpha: 0.08),
+                    blurRadius: 12,
+                    spreadRadius: 1,
+                  ),
               ],
             ),
             child: Row(
@@ -112,8 +126,8 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    letterSpacing: 0.3,
-                    color: safeAssistant.isListening ? accentColor : theme.colorScheme.onSurface,
+                    letterSpacing: 0.4,
+                    color: isActive ? _KB.warmIvory : _KB.lightAccent,
                   ),
                 ),
               ],
@@ -141,65 +155,35 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
     }
   }
 
+  // ── Expanded full-screen panel ─────────────────────────────────────────────
   Widget _buildExpandedOverlay(
     BuildContext context,
     VoiceAssistantState assistant,
     VoiceAssistantController controller,
-    ThemeData theme,
-    Color accentColor,
-    bool isDark,
   ) {
     return Positioned.fill(
       child: Material(
-        color: Colors.black.withValues(alpha: 0.72),
+        // Deep obsidian backdrop — 94 % opacity so the host screen is barely
+        // visible, reinforcing the "modal" feel while keeping brand depth.
+        color: _KB.obsidian.withValues(alpha: 0.94),
         child: SafeArea(
           child: Column(
             children: [
-              // Top bar with minimize, full-chat shortcut, and close
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 28),
-                      tooltip: 'Minimize bubble',
-                      onPressed: () => controller.setExpanded(false),
-                    ),
-                    Text(
-                      'Kee AI Assistant',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
-                        color: accentColor,
-                      ),
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.open_in_full_rounded, size: 20),
-                          tooltip: 'Open full chat page',
-                          onPressed: () {
-                            controller.setExpanded(false);
-                            context.push('/ask-kee');
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 22),
-                          tooltip: 'Close session',
-                          onPressed: () => controller.dismissSession(),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+              // ── Top bar ──────────────────────────────────────────────────
+              _buildTopBar(context, controller),
 
               const Spacer(flex: 1),
 
-              // Animated Voice Orb Hero
+              // ── Logo mark centred above orb ───────────────────────────────
+              Image.asset(
+                'assets/logo/kee_logo_mark_dark.png',
+                height: 28,
+                fit: BoxFit.contain,
+              ),
+
+              const SizedBox(height: AppSpacing.md),
+
+              // ── Animated orb ─────────────────────────────────────────────
               Center(
                 child: KeeVoiceOrb(
                   state: assistant.state,
@@ -217,175 +201,290 @@ class _KeeFloatingAssistantState extends ConsumerState<KeeFloatingAssistant> {
                 ),
               ),
 
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(height: AppSpacing.sm),
 
-              // State label
+              // ── State label ───────────────────────────────────────────────
               Text(
                 _getStateLabel(assistant.state),
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: accentColor,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 1.1,
+                  color: _KB.softGrey,
                 ),
               ),
 
               const SizedBox(height: AppSpacing.lg),
 
-              // Live transcript or latest response
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 60, maxHeight: 160),
-                  child: SingleChildScrollView(
-                    child: Text(
-                      assistant.liveTranscript.isNotEmpty
-                          ? '"${assistant.liveTranscript}"'
-                          : assistant.lastAssistantResponse.isNotEmpty
-                              ? assistant.lastAssistantResponse
-                              : 'Talk naturally or type a question...',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 16,
-                        height: 1.4,
-                        fontWeight: FontWeight.w400,
-                        color: assistant.liveTranscript.isNotEmpty
-                            ? theme.colorScheme.onSurface
-                            : theme.colorScheme.onSurface.withValues(alpha: 0.75),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              // ── Live transcript / response ────────────────────────────────
+              _buildTranscriptArea(assistant),
 
               if (assistant.errorMessage != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.sm, left: AppSpacing.lg, right: AppSpacing.lg),
+                  padding: const EdgeInsets.only(
+                      top: AppSpacing.sm,
+                      left: AppSpacing.lg,
+                      right: AppSpacing.lg),
                   child: Text(
                     assistant.errorMessage!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13, color: Color(0xFFE57373)),
+                    style: const TextStyle(fontSize: 13, color: _KB.errorRose),
                   ),
                 ),
 
               const Spacer(flex: 2),
 
-              // Optional in-bubble text input (so user can type right here without leaving!)
-              if (_showBubbleTextInput)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF221E19) : Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: accentColor.withValues(alpha: 0.5)),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: AppSpacing.md),
-                        Expanded(
-                          child: TextField(
-                            controller: _bubbleTextController,
-                            autofocus: true,
-                            decoration: const InputDecoration(
-                              hintText: 'Type to Kee...',
-                              border: InputBorder.none,
-                              isDense: true,
-                            ),
-                            onSubmitted: (_) => _sendBubbleText(controller),
-                          ),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.send_rounded, size: 20, color: accentColor),
-                          onPressed: () => _sendBubbleText(controller),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                          onPressed: () => setState(() => _showBubbleTextInput = false),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+              // ── Inline text input (optional) ──────────────────────────────
+              if (_showBubbleTextInput) _buildTextInput(controller),
 
-              // Bottom control bar: Mic button, Interrupt button, Keyboard toggle
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF191612) : const Color(0xFFF7F3EE),
-                  borderRadius: BorderRadius.circular(32),
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF2E271F) : const Color(0xFFE2D6C5),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    // Toggle in-bubble keyboard
-                    IconButton(
-                      icon: Icon(_showBubbleTextInput ? Icons.keyboard_hide_outlined : Icons.keyboard_alt_outlined),
-                      tooltip: _showBubbleTextInput ? 'Hide keyboard' : 'Type here',
-                      onPressed: () => setState(() => _showBubbleTextInput = !_showBubbleTextInput),
-                    ),
-
-                    // Main Mic / Stop Turn Button
-                    InkWell(
-                      borderRadius: BorderRadius.circular(32),
-                      onTap: () {
-                        if (assistant.isListening) {
-                          controller.dismissSession();
-                        } else if (assistant.isSpeaking) {
-                          controller.interrupt();
-                        } else {
-                          controller.clearError();
-                          controller.startListening();
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: assistant.isListening
-                              ? accentColor
-                              : assistant.hasError
-                                  ? Colors.redAccent.withValues(alpha: 0.2)
-                                  : (isDark ? Colors.white12 : Colors.black12),
-                        ),
-                        child: Icon(
-                          assistant.isListening
-                              ? Icons.mic_rounded
-                              : assistant.isSpeaking
-                                  ? Icons.stop_rounded
-                                  : assistant.hasError
-                                      ? Icons.refresh_rounded
-                                      : Icons.mic_none_rounded,
-                          color: assistant.isListening
-                              ? (isDark ? Colors.black : Colors.white)
-                              : assistant.hasError
-                                  ? Colors.redAccent
-                                  : theme.colorScheme.onSurface,
-                          size: 28,
-                        ),
-                      ),
-                    ),
-
-                    // Tap to Interrupt Button
-                    TextButton.icon(
-                      icon: const Icon(Icons.pan_tool_outlined, size: 18),
-                      label: const Text('Interrupt', style: TextStyle(fontSize: 13)),
-                      style: TextButton.styleFrom(
-                        foregroundColor: assistant.isSpeaking ? accentColor : theme.colorScheme.onSurface.withValues(alpha: 0.4),
-                      ),
-                      onPressed: assistant.isSpeaking ? () => controller.interrupt() : null,
-                    ),
-                  ],
-                ),
-              ),
+              // ── Bottom control bar ────────────────────────────────────────
+              _buildControlBar(assistant, controller),
 
               const SizedBox(height: AppSpacing.sm),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ── Top bar: minimize | logo wordmark | expand + close ────────────────────
+  Widget _buildTopBar(BuildContext context, VoiceAssistantController controller) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm, vertical: AppSpacing.sm),
+      child: Row(
+        children: [
+          // Minimize
+          IconButton(
+            icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                size: 26, color: _KB.softGrey),
+            tooltip: 'Minimize',
+            onPressed: () => controller.setExpanded(false),
+          ),
+
+          // Centre: Kee wordmark logo
+          Expanded(
+            child: Center(
+              child: Image.asset(
+                'assets/logo/kee_logo_cropped_dark.png',
+                height: 22,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+
+          // Open full page
+          IconButton(
+            icon: const Icon(Icons.open_in_full_rounded,
+                size: 18, color: _KB.softGrey),
+            tooltip: 'Open full chat',
+            onPressed: () {
+              controller.setExpanded(false);
+              context.push('/ask-kee');
+            },
+          ),
+
+          // Close / dismiss session
+          IconButton(
+            icon: const Icon(Icons.close_rounded,
+                size: 20, color: _KB.softGrey),
+            tooltip: 'Close session',
+            onPressed: () => controller.dismissSession(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Transcript / response area ────────────────────────────────────────────
+  Widget _buildTranscriptArea(VoiceAssistantState assistant) {
+    final hasTranscript = assistant.liveTranscript.isNotEmpty;
+    final hasResponse   = assistant.lastAssistantResponse.isNotEmpty;
+
+    final text = hasTranscript
+        ? '"${assistant.liveTranscript}"'
+        : hasResponse
+            ? assistant.lastAssistantResponse
+            : 'Talk naturally or type a question...';
+
+    final textColor = hasTranscript
+        ? _KB.warmIvory
+        : hasResponse
+            ? _KB.warmIvory.withValues(alpha: 0.85)
+            : _KB.softGrey;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 56, maxHeight: 160),
+        child: SingleChildScrollView(
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.5,
+              fontWeight: hasTranscript ? FontWeight.w500 : FontWeight.w400,
+              color: textColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Inline text input row ─────────────────────────────────────────────────
+  Widget _buildTextInput(VoiceAssistantController controller) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
+      child: Container(
+        decoration: BoxDecoration(
+          color: _KB.surface,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: _KB.border),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: TextField(
+                controller: _bubbleTextController,
+                autofocus: true,
+                style: const TextStyle(color: _KB.warmIvory, fontSize: 14),
+                cursorColor: _KB.lightAccent,
+                decoration: const InputDecoration(
+                  hintText: 'Type to Kee...',
+                  hintStyle: TextStyle(color: _KB.softGrey, fontSize: 14),
+                  border: InputBorder.none,
+                  isDense: true,
+                ),
+                onSubmitted: (_) => _sendBubbleText(controller),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.send_rounded, size: 20, color: _KB.lightAccent),
+              onPressed: () => _sendBubbleText(controller),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 18, color: _KB.softGrey),
+              onPressed: () => setState(() => _showBubbleTextInput = false),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Bottom control bar ────────────────────────────────────────────────────
+  Widget _buildControlBar(
+    VoiceAssistantState assistant,
+    VoiceAssistantController controller,
+  ) {
+    return Container(
+      margin: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: _KB.surface,
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: _KB.border),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          // Keyboard toggle
+          IconButton(
+            icon: Icon(
+              _showBubbleTextInput
+                  ? Icons.keyboard_hide_outlined
+                  : Icons.keyboard_alt_outlined,
+              color: _KB.softGrey,
+            ),
+            tooltip: _showBubbleTextInput ? 'Hide keyboard' : 'Type here',
+            onPressed: () =>
+                setState(() => _showBubbleTextInput = !_showBubbleTextInput),
+          ),
+
+          // Central mic / stop button
+          _MicButton(assistant: assistant, controller: controller),
+
+          // Interrupt
+          TextButton.icon(
+            icon: Icon(
+              Icons.pan_tool_outlined,
+              size: 16,
+              color: assistant.isSpeaking
+                  ? _KB.lightAccent
+                  : _KB.softGrey.withValues(alpha: 0.5),
+            ),
+            label: Text(
+              'Interrupt',
+              style: TextStyle(
+                fontSize: 12,
+                color: assistant.isSpeaking
+                    ? _KB.lightAccent
+                    : _KB.softGrey.withValues(alpha: 0.5),
+              ),
+            ),
+            onPressed:
+                assistant.isSpeaking ? () => controller.interrupt() : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Mic button — extracted for clarity ───────────────────────────────────────
+class _MicButton extends StatelessWidget {
+  final VoiceAssistantState assistant;
+  final VoiceAssistantController controller;
+
+  const _MicButton({required this.assistant, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final IconData icon;
+    final Color bg;
+    final Color iconColor;
+
+    if (assistant.isListening) {
+      icon      = Icons.mic_rounded;
+      bg        = _KB.warmIvory;
+      iconColor = _KB.obsidian;
+    } else if (assistant.isSpeaking) {
+      icon      = Icons.stop_rounded;
+      bg        = _KB.lightAccent.withValues(alpha: 0.18);
+      iconColor = _KB.lightAccent;
+    } else if (assistant.hasError) {
+      icon      = Icons.refresh_rounded;
+      bg        = _KB.errorRose.withValues(alpha: 0.15);
+      iconColor = _KB.errorRose;
+    } else {
+      icon      = Icons.mic_none_rounded;
+      bg        = _KB.border;
+      iconColor = _KB.lightAccent;
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(32),
+      onTap: () {
+        if (assistant.isListening) {
+          controller.dismissSession();
+        } else if (assistant.isSpeaking) {
+          controller.interrupt();
+        } else {
+          controller.clearError();
+          controller.startListening();
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(shape: BoxShape.circle, color: bg),
+        child: Icon(icon, color: iconColor, size: 28),
       ),
     );
   }

@@ -183,6 +183,31 @@ class NativeVoiceBridge {
     }
   }
 
+  Future<Map<String, dynamic>> executeDeviceAction(
+    String action,
+    Map<String, dynamic> params,
+  ) async {
+    if (kIsWeb || !Platform.isAndroid) {
+      return {
+        'success': false,
+        'supported': false,
+        'message': 'Device actions are only supported on Android.',
+      };
+    }
+    try {
+      final res = await _channel.invokeMethod<Map>('executeDeviceAction', {
+        'action': action,
+        'params': params,
+      });
+      return Map<String, dynamic>.from(res ?? {});
+    } catch (e) {
+      return {
+        'success': false,
+        'message': "Couldn't execute that device action.",
+      };
+    }
+  }
+
   Future<bool> isWakeWordModelReady() async {
     if (kIsWeb || !Platform.isAndroid) return true;
     try {

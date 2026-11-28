@@ -137,6 +137,12 @@ class _FakeNativeVoiceBridge implements NativeVoiceBridge {
     'success': true,
     'message': 'Calling $target.',
   };
+
+  @override
+  Future<Map<String, dynamic>> executeDeviceAction(
+    String action,
+    Map<String, dynamic> params,
+  ) async => {'success': true, 'message': 'Executed $action.'};
 }
 
 class _FakeSpeechService implements ISpeechRecognitionService {

@@ -2,9 +2,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../voice/assistant_state.dart';
 
-/// The Kee Voice Orb: A modern, fluid visual identity for Kee's voice assistant.
-/// Uses the Novaré palette (Obsidian, Warm Champagne Ivory, and Champagne Gold).
-/// Reactively transitions between Idle, Listening, Processing, Speaking, Interrupted, and Error states.
+/// The Kee Voice Orb — holographic orb using the official Kee brand identity.
+/// Palette: Obsidian core (#080808), warm ivory (#F3F0E8), soft grey (#77736B),
+/// light accent (#D8D2C5). Zero blue, cyan or neon.
+/// Animated mesh-lines inspired by the flowing beige grid in the Kee logo.
 class KeeVoiceOrb extends StatefulWidget {
   final AssistantState state;
   final double soundLevel; // 0.0 to 1.0 normalized
@@ -23,9 +24,27 @@ class KeeVoiceOrb extends StatefulWidget {
   State<KeeVoiceOrb> createState() => _KeeVoiceOrbState();
 }
 
+// ─────────────────────────────────────────────────────────────
+// Official Kee brand colours — single source of truth for the orb
+// Black:        #080808   Warm ivory:   #F3F0E8
+// Soft grey:    #77736B   Light accent: #D8D2C5
+// ─────────────────────────────────────────────────────────────
+class _KeeBrand {
+  static const Color obsidian      = Color(0xFF080808);
+  static const Color coreDeep      = Color(0xFF100F0D);
+  static const Color warmIvory     = Color(0xFFF3F0E8);
+  static const Color champagne     = Color(0xFFD8D2C5);
+  static const Color softGrey      = Color(0xFF77736B);
+  static const Color ivoryGlow     = Color(0xFFFBF7F0);
+  static const Color meshLine      = Color(0xFFBFB8AE);
+  static const Color errorRose     = Color(0xFFD97070);
+  static const Color amberWarm     = Color(0xFFD4A060);
+}
+
 class _KeeVoiceOrbState extends State<KeeVoiceOrb> with TickerProviderStateMixin {
   late final AnimationController _pulseController;
   late final AnimationController _rotationController;
+  late final AnimationController _meshController;
   late final AnimationController _waveController;
 
   @override
@@ -34,51 +53,63 @@ class _KeeVoiceOrbState extends State<KeeVoiceOrb> with TickerProviderStateMixin
 
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 2200),
+      duration: const Duration(milliseconds: 2400),
     )..repeat(reverse: true);
 
     _rotationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 6000),
+      duration: const Duration(milliseconds: 8000),
+    )..repeat();
+
+    // Slower counter-rotation for inner mesh layer
+    _meshController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 14000),
     )..repeat();
 
     _waveController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat();
+
+    _applySpeedForState(widget.state);
   }
 
   @override
   void didUpdateWidget(KeeVoiceOrb oldWidget) {
     super.didUpdateWidget(oldWidget);
-
     if (oldWidget.state != widget.state) {
-      // Adjust animation speeds based on state
-      switch (widget.state) {
-        case AssistantState.idle:
-          _pulseController.duration = const Duration(milliseconds: 2800);
-          _rotationController.duration = const Duration(milliseconds: 9000);
-          if (!_pulseController.isAnimating) _pulseController.repeat(reverse: true);
-          break;
-        case AssistantState.listening:
-          _pulseController.duration = const Duration(milliseconds: 1200);
-          _rotationController.duration = const Duration(milliseconds: 4000);
-          break;
-        case AssistantState.processing:
-          _pulseController.duration = const Duration(milliseconds: 800);
-          _rotationController.duration = const Duration(milliseconds: 1500);
-          break;
-        case AssistantState.speaking:
-          _pulseController.duration = const Duration(milliseconds: 1000);
-          _rotationController.duration = const Duration(milliseconds: 3000);
-          break;
-        case AssistantState.interrupted:
-          _pulseController.duration = const Duration(milliseconds: 400);
-          break;
-        case AssistantState.error:
-          _pulseController.duration = const Duration(milliseconds: 1600);
-          break;
-      }
+      _applySpeedForState(widget.state);
+    }
+  }
+
+  void _applySpeedForState(AssistantState s) {
+    switch (s) {
+      case AssistantState.idle:
+        _pulseController.duration = const Duration(milliseconds: 3000);
+        _rotationController.duration = const Duration(milliseconds: 11000);
+        _meshController.duration = const Duration(milliseconds: 18000);
+        if (!_pulseController.isAnimating) _pulseController.repeat(reverse: true);
+      case AssistantState.listening:
+        _pulseController.duration = const Duration(milliseconds: 1100);
+        _rotationController.duration = const Duration(milliseconds: 4500);
+        _meshController.duration = const Duration(milliseconds: 8000);
+      case AssistantState.processing:
+        _pulseController.duration = const Duration(milliseconds: 700);
+        _rotationController.duration = const Duration(milliseconds: 1800);
+        _meshController.duration = const Duration(milliseconds: 3200);
+      case AssistantState.speaking:
+        _pulseController.duration = const Duration(milliseconds: 900);
+        _rotationController.duration = const Duration(milliseconds: 3200);
+        _meshController.duration = const Duration(milliseconds: 6000);
+      case AssistantState.interrupted:
+        _pulseController.duration = const Duration(milliseconds: 380);
+        _rotationController.duration = const Duration(milliseconds: 1200);
+        _meshController.duration = const Duration(milliseconds: 2400);
+      case AssistantState.error:
+        _pulseController.duration = const Duration(milliseconds: 1800);
+        _rotationController.duration = const Duration(milliseconds: 7000);
+        _meshController.duration = const Duration(milliseconds: 14000);
     }
   }
 
@@ -86,36 +117,27 @@ class _KeeVoiceOrbState extends State<KeeVoiceOrb> with TickerProviderStateMixin
   void dispose() {
     _pulseController.dispose();
     _rotationController.dispose();
+    _meshController.dispose();
     _waveController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    // Palette: Novaré Obsidian & Warm Champagne
-    final primaryGold = isDark ? const Color(0xFFE8D0B2) : const Color(0xFFA6855B);
-    final secondaryGlow = isDark ? const Color(0xFFC8A878) : const Color(0xFFD4B996);
-    final coreObsidian = isDark ? const Color(0xFF0F0E0C) : const Color(0xFF231E18);
-
-    Color activeColor;
+    // Resolve active colour without any blue/cyan/neon
+    final Color activeColor;
     switch (widget.state) {
       case AssistantState.error:
-        activeColor = const Color(0xFFE57373); // Muted coral red
-        break;
-      case AssistantState.processing:
-        activeColor = const Color(0xFF90CAF9); // Thoughtful luminous blue-gold
-        break;
+        activeColor = _KeeBrand.errorRose;
       case AssistantState.interrupted:
-        activeColor = const Color(0xFFFFB74D); // Crisp amber transition
-        break;
+        activeColor = _KeeBrand.amberWarm;
       case AssistantState.listening:
+        activeColor = _KeeBrand.ivoryGlow;
+      case AssistantState.processing:
+        activeColor = _KeeBrand.champagne;
       case AssistantState.speaking:
       case AssistantState.idle:
-        activeColor = primaryGold;
-        break;
+        activeColor = _KeeBrand.warmIvory;
     }
 
     return GestureDetector(
@@ -124,18 +146,22 @@ class _KeeVoiceOrbState extends State<KeeVoiceOrb> with TickerProviderStateMixin
         width: widget.size * 1.5,
         height: widget.size * 1.5,
         child: AnimatedBuilder(
-          animation: Listenable.merge([_pulseController, _rotationController, _waveController]),
-          builder: (context, child) {
+          animation: Listenable.merge([
+            _pulseController,
+            _rotationController,
+            _meshController,
+            _waveController,
+          ]),
+          builder: (_, child) {
             return CustomPaint(
               painter: _KeeOrbPainter(
                 state: widget.state,
                 soundLevel: widget.soundLevel,
                 pulseValue: _pulseController.value,
                 rotationAngle: _rotationController.value * 2 * math.pi,
+                meshAngle: _meshController.value * 2 * math.pi,
                 waveValue: _waveController.value,
-                primaryColor: activeColor,
-                secondaryColor: secondaryGlow,
-                coreColor: coreObsidian,
+                activeColor: activeColor,
               ),
               size: Size(widget.size * 1.5, widget.size * 1.5),
             );
@@ -146,25 +172,26 @@ class _KeeVoiceOrbState extends State<KeeVoiceOrb> with TickerProviderStateMixin
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Painter — all brand-correct colours, mesh-lines inspired by the Kee logo grid
+// ─────────────────────────────────────────────────────────────────────────────
 class _KeeOrbPainter extends CustomPainter {
   final AssistantState state;
   final double soundLevel;
   final double pulseValue;
   final double rotationAngle;
+  final double meshAngle;
   final double waveValue;
-  final Color primaryColor;
-  final Color secondaryColor;
-  final Color coreColor;
+  final Color activeColor;
 
-  _KeeOrbPainter({
+  const _KeeOrbPainter({
     required this.state,
     required this.soundLevel,
     required this.pulseValue,
     required this.rotationAngle,
+    required this.meshAngle,
     required this.waveValue,
-    required this.primaryColor,
-    required this.secondaryColor,
-    required this.coreColor,
+    required this.activeColor,
   });
 
   @override
@@ -172,105 +199,229 @@ class _KeeOrbPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final baseRadius = size.width * 0.28;
 
-    // Outer ripples / sound reactive waves
-    if (state == AssistantState.listening || state == AssistantState.speaking) {
-      final audioMultiplier = state == AssistantState.listening
-          ? (0.2 + soundLevel * 0.8)
-          : (0.3 + 0.4 * math.sin(waveValue * 2 * math.pi).abs());
-
-      // Outer ripple 2
-      final rippleRadius2 = baseRadius * (1.25 + 0.35 * audioMultiplier);
-      final ripplePaint2 = Paint()
-        ..color = primaryColor.withValues(alpha: 0.12 * audioMultiplier)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0;
-      canvas.drawCircle(center, rippleRadius2, ripplePaint2);
-
-      // Outer ripple 1
-      final rippleRadius1 = baseRadius * (1.1 + 0.25 * audioMultiplier);
-      final ripplePaint1 = Paint()
-        ..color = secondaryColor.withValues(alpha: 0.25 * audioMultiplier)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.0;
-      canvas.drawCircle(center, rippleRadius1, ripplePaint1);
-    }
-
-    // Outer aura glow
-    final glowRadius = baseRadius * (1.0 + 0.12 * pulseValue);
+    // ── 1. Outer ambient glow halo ────────────────────────────────────────────
+    final glowRadius = baseRadius * (1.05 + 0.14 * pulseValue);
     final glowPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          primaryColor.withValues(alpha: state == AssistantState.idle ? 0.2 : 0.4),
-          secondaryColor.withValues(alpha: 0.08),
+          activeColor.withValues(alpha: state == AssistantState.idle ? 0.18 : 0.38),
+          _KeeBrand.champagne.withValues(alpha: 0.07),
           Colors.transparent,
         ],
-        stops: const [0.3, 0.7, 1.0],
-      ).createShader(Rect.fromCircle(center: center, radius: glowRadius * 1.5));
-    canvas.drawCircle(center, glowRadius * 1.5, glowPaint);
+        stops: const [0.25, 0.65, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: glowRadius * 1.6));
+    canvas.drawCircle(center, glowRadius * 1.6, glowPaint);
 
-    // Dynamic orbital particles for processing state
-    if (state == AssistantState.processing) {
-      final particlePaint = Paint()
-        ..color = primaryColor.withValues(alpha: 0.85)
-        ..style = PaintingStyle.fill;
+    // ── 2. Sound-reactive ripple rings (listening / speaking) ─────────────────
+    if (state == AssistantState.listening || state == AssistantState.speaking) {
+      final amp = state == AssistantState.listening
+          ? (0.18 + soundLevel * 0.82)
+          : (0.28 + 0.42 * math.sin(waveValue * 2 * math.pi).abs());
 
-      const particleCount = 4;
-      for (int i = 0; i < particleCount; i++) {
-        final angle = rotationAngle + (i * 2 * math.pi / particleCount);
-        final distance = baseRadius * 1.25;
-        final px = center.dx + distance * math.cos(angle);
-        final py = center.dy + distance * math.sin(angle);
-        canvas.drawCircle(Offset(px, py), 3.5, particlePaint);
+      for (final factor in [1.12 + 0.22 * amp, 1.28 + 0.32 * amp]) {
+        canvas.drawCircle(
+          center,
+          baseRadius * factor,
+          Paint()
+            ..color = activeColor.withValues(alpha: 0.14 * amp)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
       }
     }
 
-    // Main Orb Sphere Body
-    final sphereRadius = baseRadius * (0.95 + 0.05 * pulseValue);
+    // ── 3. Rotating mesh-line grid (Kee logo inspiration) ────────────────────
+    _drawMeshGrid(canvas, center, baseRadius);
+
+    // ── 4. Orbital ring ───────────────────────────────────────────────────────
+    _drawOrbitalRing(canvas, center, baseRadius);
+
+    // ── 5. Processing orbit particles — warm grey dots, no blue ──────────────
+    if (state == AssistantState.processing) {
+      final pPaint = Paint()
+        ..color = _KeeBrand.champagne.withValues(alpha: 0.9)
+        ..style = PaintingStyle.fill;
+      for (int i = 0; i < 4; i++) {
+        final a = rotationAngle + i * math.pi / 2;
+        final d = baseRadius * 1.26;
+        canvas.drawCircle(
+          Offset(center.dx + d * math.cos(a), center.dy + d * math.sin(a)),
+          3.2,
+          pPaint,
+        );
+      }
+      // Smaller counter-orbit
+      final pPaint2 = Paint()
+        ..color = _KeeBrand.softGrey.withValues(alpha: 0.6)
+        ..style = PaintingStyle.fill;
+      for (int i = 0; i < 6; i++) {
+        final a = -meshAngle + i * math.pi / 3;
+        final d = baseRadius * 1.08;
+        canvas.drawCircle(
+          Offset(center.dx + d * math.cos(a), center.dy + d * math.sin(a)),
+          2.0,
+          pPaint2,
+        );
+      }
+    }
+
+    // ── 6. Main orb sphere body ───────────────────────────────────────────────
+    final sphereRadius = baseRadius * (0.94 + 0.06 * pulseValue);
     final sphereGradient = RadialGradient(
       center: Alignment(
-        -0.35 * math.cos(rotationAngle * 0.5),
-        -0.35 * math.sin(rotationAngle * 0.5),
+        -0.3 * math.cos(rotationAngle * 0.4),
+        -0.3 * math.sin(rotationAngle * 0.4),
       ),
       colors: [
-        primaryColor.withValues(alpha: 0.95),
-        secondaryColor.withValues(alpha: 0.65),
-        coreColor,
+        activeColor.withValues(alpha: 0.92),
+        _KeeBrand.champagne.withValues(alpha: 0.55),
+        _KeeBrand.coreDeep,
+        _KeeBrand.obsidian,
       ],
-      stops: const [0.0, 0.45, 1.0],
+      stops: const [0.0, 0.35, 0.72, 1.0],
     ).createShader(Rect.fromCircle(center: center, radius: sphereRadius));
 
-    final spherePaint = Paint()
-      ..shader = sphereGradient
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(center, sphereRadius, spherePaint);
-
-    // Inner Specular Light Core
-    final innerHighlight = Paint()
-      ..color = Colors.white.withValues(alpha: 0.28 + 0.1 * pulseValue)
-      ..style = PaintingStyle.fill;
-    final highlightOffset = Offset(
-      center.dx - sphereRadius * 0.28,
-      center.dy - sphereRadius * 0.28,
+    canvas.drawCircle(
+      center,
+      sphereRadius,
+      Paint()
+        ..shader = sphereGradient
+        ..style = PaintingStyle.fill,
     );
-    canvas.drawCircle(highlightOffset, sphereRadius * 0.22, innerHighlight);
 
-    // Interrupted state visual flash
+    // ── 7. Specular warm-ivory highlight ──────────────────────────────────────
+    final hlOffset = Offset(
+      center.dx - sphereRadius * 0.26,
+      center.dy - sphereRadius * 0.26,
+    );
+    canvas.drawCircle(
+      hlOffset,
+      sphereRadius * 0.21,
+      Paint()
+        ..color = _KeeBrand.ivoryGlow.withValues(alpha: 0.26 + 0.10 * pulseValue)
+        ..style = PaintingStyle.fill,
+    );
+
+    // ── 8. Listening: bright ivory core pulse ─────────────────────────────────
+    if (state == AssistantState.listening) {
+      canvas.drawCircle(
+        center,
+        sphereRadius * (0.28 + 0.12 * pulseValue),
+        Paint()
+          ..color = _KeeBrand.ivoryGlow.withValues(alpha: 0.55 + 0.3 * pulseValue)
+          ..style = PaintingStyle.fill,
+      );
+    }
+
+    // ── 9. Interrupted edge flash ─────────────────────────────────────────────
     if (state == AssistantState.interrupted) {
-      final flashPaint = Paint()
-        ..color = Colors.white.withValues(alpha: 0.45)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4.0;
-      canvas.drawCircle(center, sphereRadius * 1.05, flashPaint);
+      canvas.drawCircle(
+        center,
+        sphereRadius * 1.06,
+        Paint()
+          ..color = _KeeBrand.ivoryGlow.withValues(alpha: 0.40)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3.5,
+      );
     }
   }
 
+  // ── Mesh grid: two overlapping rotated grids clipped to the orb ─────────────
+  void _drawMeshGrid(Canvas canvas, Offset center, double baseRadius) {
+    final meshRadius = baseRadius * 1.0;
+    final clipPath = Path()..addOval(Rect.fromCircle(center: center, radius: meshRadius));
+
+    // Outer mesh halo extends slightly beyond the sphere
+    final haloRadius = baseRadius * 1.22;
+    final haloPath = Path()..addOval(Rect.fromCircle(center: center, radius: haloRadius));
+
+    final meshPaint = Paint()
+      ..color = _KeeBrand.meshLine.withValues(alpha: 0.22)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.7;
+
+    // ---- Inner mesh (clipped inside sphere) ----
+    canvas.save();
+    canvas.clipPath(clipPath);
+    _drawRotatedGrid(canvas, center, meshRadius, rotationAngle, meshPaint);
+    _drawRotatedGrid(canvas, center, meshRadius, -meshAngle * 0.6, meshPaint);
+    canvas.restore();
+
+    // ---- Outer halo mesh (outside sphere, faded) ----
+    final haloPaint = Paint()
+      ..color = _KeeBrand.meshLine.withValues(alpha: 0.08)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+
+    canvas.save();
+    canvas.clipPath(haloPath);
+    // Exclude inner sphere from halo
+    final haloOnly = Path.combine(
+      PathOperation.difference,
+      haloPath,
+      clipPath,
+    );
+    canvas.clipPath(haloOnly);
+    _drawRotatedGrid(canvas, center, haloRadius, meshAngle * 0.3, haloPaint);
+    canvas.restore();
+  }
+
+  void _drawRotatedGrid(Canvas canvas, Offset center, double radius, double angle, Paint paint) {
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle);
+
+    const spacing = 14.0;
+    final extent = radius * 1.1;
+    final lines = (extent / spacing).ceil() + 1;
+
+    for (int i = -lines; i <= lines; i++) {
+      final d = i * spacing;
+      canvas.drawLine(Offset(d, -extent), Offset(d, extent), paint);
+      canvas.drawLine(Offset(-extent, d), Offset(extent, d), paint);
+    }
+
+    canvas.restore();
+  }
+
+  // ── Single thin orbital ring ─────────────────────────────────────────────────
+  void _drawOrbitalRing(Canvas canvas, Offset center, double baseRadius) {
+    final ringRadius = baseRadius * 1.16;
+    final ringPaint = Paint()
+      ..color = _KeeBrand.champagne.withValues(alpha: 0.28 + 0.12 * pulseValue)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(rotationAngle * 0.35);
+    // Slight ellipse tilt for depth
+    canvas.scale(1.0, 0.36);
+    canvas.drawCircle(Offset.zero, ringRadius, ringPaint);
+    canvas.restore();
+
+    // Second ring, counter-rotating
+    final ring2Paint = Paint()
+      ..color = _KeeBrand.softGrey.withValues(alpha: 0.16 + 0.08 * pulseValue)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.6;
+
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(-meshAngle * 0.25 + math.pi / 4);
+    canvas.scale(0.36, 1.0);
+    canvas.drawCircle(Offset.zero, ringRadius * 0.95, ring2Paint);
+    canvas.restore();
+  }
+
   @override
-  bool shouldRepaint(covariant _KeeOrbPainter oldDelegate) {
-    return oldDelegate.state != state ||
-        oldDelegate.soundLevel != soundLevel ||
-        oldDelegate.pulseValue != pulseValue ||
-        oldDelegate.rotationAngle != rotationAngle ||
-        oldDelegate.waveValue != waveValue ||
-        oldDelegate.primaryColor != primaryColor;
+  bool shouldRepaint(covariant _KeeOrbPainter old) {
+    return old.state != state ||
+        old.soundLevel != soundLevel ||
+        old.pulseValue != pulseValue ||
+        old.rotationAngle != rotationAngle ||
+        old.meshAngle != meshAngle ||
+        old.waveValue != waveValue ||
+        old.activeColor != activeColor;
   }
 }

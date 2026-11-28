@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import '../../features/memories/data/memory_model.dart';
@@ -19,6 +20,7 @@ enum MessageIntent {
   eventOrFact,
   idea,
   shoppingOrTask,
+  deviceAction,
   casualConversation,
 }
 
@@ -231,62 +233,299 @@ class KeeConversationEngine {
     );
   }
 
+  Future<ConversationAction> _dispatchDeviceAction(
+    String action,
+    String target, {
+    String? fallbackMessage,
+  }) async {
+    if (_deviceActionHandler != null) {
+      final res = await _deviceActionHandler(action, target);
+      final msg =
+          res['message'] as String? ?? fallbackMessage ?? 'Action completed.';
+      return ConversationAction(
+        responseText: msg,
+        intent: MessageIntent.deviceAction,
+      );
+    }
+    return ConversationAction(
+      responseText: fallbackMessage ?? 'Executing $action.',
+      intent: MessageIntent.deviceAction,
+    );
+  }
+
   Future<ConversationAction?> _tryHandleDeviceAction(
     String text,
     String lower,
   ) async {
-    // Open app / phone book / contacts
-    final openMatch = RegExp(
-      r'^(?:please\s+)?(?:open|launch|start)\s+(?:my\s+|the\s+)?(.+)$',
+    final trimmed = text.trim();
+    final cleanLower = lower.replaceAll(RegExp(r'[.!?]+$'), '').trim();
+
+    // 1. Return to home screen
+    if (RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:return|go)\s+(?:to\s+)?(?:the\s+)?home(?:\s+screen)?$',
+    ).hasMatch(cleanLower)) {
+      return _dispatchDeviceAction(
+        'goHome',
+        '',
+        fallbackMessage: 'Returning to the home screen.',
+      );
+    }
+
+    // 2. Flashlight control
+    final flashMatch = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:(?:turn|switch)\s+(on|off)\s+(?:the\s+)?(?:flashlight|torch)|(?:turn|switch)\s+(?:the\s+)?(?:flashlight|torch)\s+(on|off)|(?:flashlight|torch)\s+(on|off))$',
+    ).firstMatch(cleanLower);
+    if (flashMatch != null) {
+      final stateWord =
+          flashMatch.group(1) ?? flashMatch.group(2) ?? flashMatch.group(3);
+      final enabled = stateWord == 'on';
+      return _dispatchDeviceAction(
+        'setFlashlight',
+        jsonEncode({'enabled': enabled}),
+        fallbackMessage: enabled
+            ? 'Flashlight turned on.'
+            : 'Flashlight turned off.',
+      );
+    }
+
+    // 3. Set an alarm
+    final alarmMatch = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:set|create|add)\s+(?:an\s+)?alarm(?:\s+(?:for|at)\s+(.+))?$',
+    ).firstMatch(cleanLower);
+    if (alarmMatch != null) {
+      final timePart = alarmMatch.group(1)?.trim() ?? '';
+      final alarmTime = _parseAlarmTime(timePart);
+      if (alarmTime == null) {
+        return const ConversationAction(
+          responseText: 'What time should I set the alarm for?',
+          intent: MessageIntent.deviceAction,
+          requiresClarification: true,
+        );
+      }
+      final (hour, minute) = alarmTime;
+      final formatted = DateFormat(
+        'h:mm a',
+      ).format(DateTime(2026, 1, 1, hour, minute));
+      return _dispatchDeviceAction(
+        'setAlarm',
+        jsonEncode({'hour': hour, 'minute': minute, 'label': 'Kee Alarm'}),
+        fallbackMessage: 'Setting an alarm for $formatted.',
+      );
+    }
+
+    // 4. Adjust volume
+    final volumeMatch = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:(?:turn|adjust|set)\s+(?:the\s+)?volume\s*(up|down|higher|lower)?|volume\s+(up|down)|adjust\s+(?:the\s+)?volume|(mute|unmute)(?:\s+(?:the\s+)?(?:volume|media|sound))?)$',
+    ).firstMatch(cleanLower);
+    if (volumeMatch != null) {
+      final rawDir =
+          volumeMatch.group(1) ?? volumeMatch.group(2) ?? volumeMatch.group(3);
+      if (rawDir == null) {
+        return const ConversationAction(
+          responseText:
+              'Would you like me to turn the volume up, down, or mute it?',
+          intent: MessageIntent.deviceAction,
+          requiresClarification: true,
+        );
+      }
+      final direction = switch (rawDir) {
+        'higher' || 'up' => 'up',
+        'lower' || 'down' => 'down',
+        'mute' => 'mute',
+        'unmute' => 'unmute',
+        _ => 'up',
+      };
+      return _dispatchDeviceAction(
+        'adjustVolume',
+        jsonEncode({'direction': direction}),
+        fallbackMessage: 'Adjusting volume $direction.',
+      );
+    }
+
+    // 5. Open dialer / Show recent calls
+    if (RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:open|launch|show)\s+(?:the\s+)?(?:phone\s+)?dialer$',
+    ).hasMatch(cleanLower)) {
+      return _dispatchDeviceAction(
+        'openDialer',
+        '',
+        fallbackMessage: 'Opening the dialer.',
+      );
+    }
+    if (RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:show|open|view|check)\s+(?:my\s+)?recent\s+calls$',
+    ).hasMatch(cleanLower)) {
+      return _dispatchDeviceAction(
+        'recentCalls',
+        '',
+        fallbackMessage: 'Opening Phone for your recent calls.',
+      );
+    }
+
+    // 6. Make a phone call (no target) or Call contact/number
+    if (RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+|i\s+want\s+to\s+)?(?:make|place|start)\s+(?:a\s+)?(?:phone\s+)?call$',
+    ).hasMatch(cleanLower)) {
+      return const ConversationAction(
+        responseText: 'Who would you like me to call?',
+        intent: MessageIntent.deviceAction,
+        requiresClarification: true,
+      );
+    }
+
+    final callMatch = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|i\s+want\s+to\s+)?(?:make\s+a\s+(?:phone\s+)?call\s+to|call|dial|phone|ring)\s+(.+)$',
       caseSensitive: false,
-    ).firstMatch(text.trim());
+    ).firstMatch(trimmed);
+    if (callMatch != null && !cleanLower.contains('remind me')) {
+      final target = callMatch
+          .group(1)!
+          .replaceAll(RegExp(r'[.!?]+$'), '')
+          .trim();
+      if (target.isNotEmpty) {
+        return _dispatchDeviceAction(
+          'callContact',
+          target,
+          fallbackMessage: 'Calling $target.',
+        );
+      }
+    }
+
+    // 7. Communication: Open messages, WhatsApp message, Compose SMS
+    if (RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:open|launch|show)\s+(?:my\s+)?messages(?:\s+app)?$',
+    ).hasMatch(cleanLower)) {
+      return _dispatchDeviceAction(
+        'openMessages',
+        '',
+        fallbackMessage: 'Opening Messages.',
+      );
+    }
+
+    final whatsappMatch = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:send|write|compose)\s+(?:a\s+)?whatsapp\s+message(?:\s+to\s+(.+))?$',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    if (whatsappMatch != null) {
+      final target = (whatsappMatch.group(1) ?? '')
+          .replaceAll(RegExp(r'[.!?]+$'), '')
+          .trim();
+      return _dispatchDeviceAction(
+        'whatsappMessage',
+        jsonEncode({'target': target, 'body': ''}),
+        fallbackMessage: 'Opening WhatsApp.',
+      );
+    }
+
+    final smsMatch = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:(?:compose|send|write)\s+(?:an\s+|a\s+)?(?:sms|text(?:\s+message)?|message)(?:\s+to\s+(.+))?|text\s+(.+))$',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    if (smsMatch != null) {
+      final target = (smsMatch.group(1) ?? smsMatch.group(2) ?? '')
+          .replaceAll(RegExp(r'[.!?]+$'), '')
+          .trim();
+      return _dispatchDeviceAction(
+        'composeSms',
+        jsonEncode({'target': target, 'body': ''}),
+        fallbackMessage: target.isNotEmpty
+            ? 'Opening your SMS composer for $target.'
+            : 'Opening your SMS composer.',
+      );
+    }
+
+    // 8. App control: Close app, Switch apps, Open app
+    final closeMatch = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+)?(?:close|exit|quit|kill|force\s+stop|shut\s+down)\s+(?:the\s+)?(.+)$',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    if (closeMatch != null) {
+      final target = closeMatch
+          .group(1)!
+          .replaceAll(RegExp(r'[.!?]+$'), '')
+          .trim();
+      if (target.isNotEmpty) {
+        return _dispatchDeviceAction(
+          'closeApp',
+          jsonEncode({'target': target}),
+          fallbackMessage:
+              "I can't force-close $target because Android doesn't allow assistant apps to close other apps without system or Accessibility permission.",
+        );
+      }
+    }
+
+    final switchMatch = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?switch\s+(?:to\s+(.+)|apps?)$',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    if (switchMatch != null) {
+      final target = (switchMatch.group(1) ?? '')
+          .replaceAll(RegExp(r'[.!?]+$'), '')
+          .trim();
+      return _dispatchDeviceAction(
+        'switchApp',
+        jsonEncode({'target': target}),
+        fallbackMessage: target.isNotEmpty
+            ? 'Opening $target.'
+            : 'Tell me which app you would like to switch to.',
+      );
+    }
+
+    final openMatch = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+)?(?:open|launch|start)\s+(?:my\s+|the\s+)?(.+)$',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
     if (openMatch != null) {
       final target = openMatch
           .group(1)!
           .replaceAll(RegExp(r'[.!?]+$'), '')
           .trim();
       if (target.isNotEmpty) {
-        if (_deviceActionHandler != null) {
-          final res = await _deviceActionHandler('openApp', target);
-          final msg = res['message'] as String? ?? 'Opening $target.';
-          return ConversationAction(
-            responseText: msg,
-            intent: MessageIntent.casualConversation,
-          );
-        }
-        return ConversationAction(
-          responseText: 'Opening $target.',
-          intent: MessageIntent.casualConversation,
+        return _dispatchDeviceAction(
+          'openApp',
+          target,
+          fallbackMessage: 'Opening $target.',
         );
       }
     }
 
-    // Call / dial contact or phone number
-    final callMatch = RegExp(
-      r'^(?:please\s+)?(?:call|dial|phone|ring)\s+(.+)$',
+    // 9. Unsupported system/device action guard (never fall through to memory prompt)
+    if (RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:take\s+a\s+(?:screenshot|photo|picture)|(?:turn|switch)\s+(?:on|off)\s+(?:wi-?fi|bluetooth|airplane\s+mode|mobile\s+data|hotspot)|lock\s+(?:the\s+)?screen|restart\s+(?:the\s+)?(?:phone|device)|power\s+off|shut\s+down\s+(?:the\s+)?(?:phone|device)|(?:increase|decrease|adjust)\s+(?:the\s+)?brightness)\b',
+    ).hasMatch(cleanLower)) {
+      return const ConversationAction(
+        responseText:
+            "I recognized that as a device-control request, but Kee doesn't support that system action on Android without system or Accessibility permissions.",
+        intent: MessageIntent.deviceAction,
+      );
+    }
+
+    return null;
+  }
+
+  (int, int)? _parseAlarmTime(String timePart) {
+    if (timePart.isEmpty) return null;
+    final direct = RegExp(
+      r'\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b',
       caseSensitive: false,
-    ).firstMatch(text.trim());
-    if (callMatch != null && !lower.contains('remind me')) {
-      final target = callMatch
-          .group(1)!
-          .replaceAll(RegExp(r'[.!?]+$'), '')
-          .trim();
-      if (target.isNotEmpty) {
-        if (_deviceActionHandler != null) {
-          final res = await _deviceActionHandler('callContact', target);
-          final msg = res['message'] as String? ?? 'Calling $target.';
-          return ConversationAction(
-            responseText: msg,
-            intent: MessageIntent.casualConversation,
-          );
+    ).firstMatch(timePart);
+    if (direct != null) {
+      var hour = int.tryParse(direct.group(1) ?? '');
+      final minute = int.tryParse(direct.group(2) ?? '0') ?? 0;
+      final meridiem = direct.group(3)?.toLowerCase();
+      if (hour != null && minute >= 0 && minute <= 59) {
+        if (meridiem == 'pm' && hour < 12) hour += 12;
+        if (meridiem == 'am' && hour == 12) hour = 0;
+        if (hour >= 0 && hour <= 23) {
+          return (hour, minute);
         }
-        return ConversationAction(
-          responseText: 'Calling $target.',
-          intent: MessageIntent.casualConversation,
-        );
       }
     }
-
+    final parsed = NlpDateParser.parse(timePart);
+    final dt = parsed.dateTime;
+    if (dt != null) {
+      return (dt.hour, dt.minute);
+    }
     return null;
   }
 

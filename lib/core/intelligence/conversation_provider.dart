@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/memories/data/memory_repository.dart';
 import '../../features/reminders/data/reminder_repository.dart';
@@ -23,7 +24,13 @@ final conversationEngineProvider = Provider<KeeConversationEngine>((ref) {
       if (action == 'callContact') {
         return voiceBridge.callContact(target);
       }
-      return Future.value({'success': false, 'message': 'Unsupported action.'});
+      Map<String, dynamic> params = {'target': target};
+      if (target.startsWith('{')) {
+        try {
+          params = Map<String, dynamic>.from(jsonDecode(target) as Map);
+        } catch (_) {}
+      }
+      return voiceBridge.executeDeviceAction(action, params);
     },
   );
 });
