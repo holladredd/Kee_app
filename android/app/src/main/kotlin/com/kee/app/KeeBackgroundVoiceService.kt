@@ -68,6 +68,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private var isPaused = false
     private var isProcessingRequest = false
     private var isSpeaking = false
+    private var isOverlayCapturingSpeech = false
     private var consecutiveErrors = 0
     private var lastWakeActivationMs = 0L
     private val wakeCooldownMs = 2500L
@@ -78,6 +79,22 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         if (isRunning && !isPaused && !isFlutterSessionActive && !isProcessingRequest && !isSpeaking && !isOverlayShowing) {
             startWakeWordListening()
         }
+    }
+    private val autoDismissOverlayRunnable = Runnable {
+        if (isRunning && isOverlayShowing && !isProcessingRequest && !isSpeaking && !isOverlayCapturingSpeech) {
+            dismissOverlay(resumeWakeWord = true)
+        }
+    }
+
+    private fun scheduleAutoDismissOverlay(delayMs: Long = 2000L) {
+        mainHandler.removeCallbacks(autoDismissOverlayRunnable)
+        if (isRunning && isOverlayShowing) {
+            mainHandler.postDelayed(autoDismissOverlayRunnable, delayMs)
+        }
+    }
+
+    private fun cancelAutoDismissOverlay() {
+        mainHandler.removeCallbacks(autoDismissOverlayRunnable)
     }
     // Primary wake phrase only ("Hi Kee"; "hi key" included solely as phonetic
     // equivalent for Vosk's standard English dictionary). No short matches.
@@ -137,7 +154,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
         when (intent?.action) {
             ACTION_STOP_LISTENING -> {
-                mainHandler.removeCallbacks(restartRunnable)
+                mainHandler.removeCallbacksAndMessages(null)
                 stopVoskListening()
                 stopSelf()
                 return START_NOT_STICKY
@@ -220,6 +237,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                         }
                         override fun onResults(results: Bundle?) {
                             consecutiveErrors = 0
+                            isOverlayCapturingSpeech = false
                             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             if (!matches.isNullOrEmpty()) {
                                 handleSpeechText(matches[0], true)
@@ -374,9 +392,16 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         if (!isVoskListening) {
             try {
                 isVoskListening = service.startListening(voskListener)
+                if (!isVoskListening) {
+                    Log.w("KeeVoiceService", "Vosk startListening returned false; scheduling recovery")
+                    scheduleVoskRecovery(isError = true)
+                } else {
+                    voskConsecutiveErrors = 0
+                }
             } catch (e: Exception) {
                 isVoskListening = false
-                e.printStackTrace()
+                Log.e("KeeVoiceService", "Vosk startListening failed: ${e.message}", e)
+                scheduleVoskRecovery(isError = true)
             }
         }
     }
@@ -432,6 +457,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun startListeningForUserQuery() {
+        cancelAutoDismissOverlay()
+        isOverlayCapturingSpeech = true
         mainHandler.post {
             updateOverlayState("Listening...", "#E8D0B2", "Speak")
             tvTranscript?.text = "Speak naturally..."
@@ -444,9 +471,14 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         }
 
         mainHandler.postDelayed({
+            if (!isRunning || !isOverlayShowing || isPaused) {
+                isOverlayCapturingSpeech = false
+                return@postDelayed
+            }
             try {
                 speechRecognizer?.startListening(intent)
             } catch (e: Exception) {
+                isOverlayCapturingSpeech = false
                 e.printStackTrace()
             }
         }, 300)
@@ -454,6 +486,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
     private fun processSpokenQuery(query: String) {
         if (isProcessingRequest) return
+        cancelAutoDismissOverlay()
+        isOverlayCapturingSpeech = false
         isProcessingRequest = true
 
         mainHandler.post {
@@ -509,6 +543,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
         isSpeaking = false
         updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
+        scheduleAutoDismissOverlay()
     }
 
     private fun updateOverlayState(statusText: String, accentHex: String, micLabel: String) {
@@ -539,6 +574,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 restartListeningAfterDelay(backoffMs)
             }
         } else {
+            isOverlayCapturingSpeech = false
             if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                 mainHandler.post {
                     updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
@@ -706,6 +742,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 marginEnd = dp(8)
             }
             setOnClickListener {
+                cancelAutoDismissOverlay()
                 tts?.stop()
                 isSpeaking = false
                 isProcessingRequest = false
@@ -812,22 +849,34 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     fun dismissOverlay(resumeWakeWord: Boolean = true) {
-        if (overlayView != null && windowManager != null) {
-            try {
-                windowManager?.removeView(overlayView)
-            } catch (_: Exception) {}
-            overlayView = null
+        val cleanupAndResume = Runnable {
+            cancelAutoDismissOverlay()
+            mainHandler.removeCallbacks(restartRunnable)
+
+            if (overlayView != null && windowManager != null) {
+                try {
+                    windowManager?.removeView(overlayView)
+                } catch (_: Exception) {}
+                overlayView = null
+            }
             isOverlayShowing = false
+            isOverlayCapturingSpeech = false
+
+            // Interrupt TTS & cancel SpeechRecognizer synchronously on main thread
+            // BEFORE restarting Vosk so the previous mic owner releases it first.
+            tts?.stop()
+            isSpeaking = false
+            speechRecognizer?.cancel()
+
+            if (resumeWakeWord && isRunning && !isPaused && !isFlutterSessionActive) {
+                startWakeWordListening()
+            }
         }
 
-        // Interrupt TTS & speech recognition if active
-        tts?.stop()
-        isSpeaking = false
-        mainHandler.post { speechRecognizer?.cancel() }
-
-        // Resume background wake word listening only if service remains active
-        if (resumeWakeWord && isRunning && !isPaused) {
-            startWakeWordListening()
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            cleanupAndResume.run()
+        } else {
+            mainHandler.post(cleanupAndResume)
         }
     }
 
@@ -842,22 +891,25 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
                     isSpeaking = true
+                    cancelAutoDismissOverlay()
                 }
                 override fun onDone(utteranceId: String?) {
                     isSpeaking = false
-                    // One-shot overlay response complete: do NOT reopen the mic automatically.
-                    // User can tap Speak for another turn or close the overlay.
+                    // One-shot overlay response complete: update UI, then auto-dismiss
+                    // after a brief grace period so Vosk resumes listening for "Hi Kee".
                     mainHandler.post {
-                        if (isOverlayShowing && !isProcessingRequest) {
+                        if (isOverlayShowing && !isProcessingRequest && !isOverlayCapturingSpeech) {
                             updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
+                            scheduleAutoDismissOverlay()
                         }
                     }
                 }
                 override fun onError(utteranceId: String?) {
                     isSpeaking = false
                     mainHandler.post {
-                        if (isOverlayShowing && !isProcessingRequest) {
+                        if (isOverlayShowing && !isProcessingRequest && !isOverlayCapturingSpeech) {
                             updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
+                            scheduleAutoDismissOverlay()
                         }
                     }
                 }

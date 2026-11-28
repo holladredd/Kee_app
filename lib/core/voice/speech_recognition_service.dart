@@ -202,11 +202,33 @@ class SpeechToTextService implements ISpeechRecognitionService {
       final errStr = e.toString();
       if (errStr.contains('InvalidStateError') ||
           errStr.contains('already started')) {
+        await _speech.cancel();
+        await Future.delayed(const Duration(milliseconds: 200));
+        _isListening = true;
         try {
-          await _speech.cancel();
-          await Future.delayed(const Duration(milliseconds: 200));
+          await _speech.listen(
+            onResult: (SpeechRecognitionResult result) {
+              onResult(result.recognizedWords, result.finalResult);
+            },
+            listenOptions: stt.SpeechListenOptions(
+              listenMode: stt.ListenMode.confirmation,
+              cancelOnError: false,
+              partialResults: true,
+              pauseFor: pauseFor ?? const Duration(seconds: 3),
+              listenFor: listenFor ?? const Duration(seconds: 30),
+              localeId: 'en_US',
+            ),
+            onSoundLevelChange: (level) {
+              final normalized = ((level + 2) / 12.0).clamp(0.0, 1.0);
+              _soundLevelController.add(normalized);
+              onSoundLevel?.call(normalized);
+            },
+          );
           return;
-        } catch (_) {}
+        } catch (retryError) {
+          _isListening = false;
+          rethrow;
+        }
       }
       rethrow;
     }

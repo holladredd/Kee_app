@@ -57,6 +57,8 @@ class KeeConversationEngine {
   final Future<Map<String, dynamic>> Function(String action, String target)?
   _deviceActionHandler;
   final Uuid _uuid = const Uuid();
+  String? _pendingDeleteMemoryId;
+  String? _pendingDeleteMemoryTitle;
 
   KeeConversationEngine({
     required MemoryRepository memoryRepo,
@@ -97,6 +99,11 @@ class KeeConversationEngine {
 
     final lower = text.toLowerCase();
 
+    // ─── 0.5. PENDING DESTRUCTIVE DELETE CONFIRMATION ──────────────
+    if (_pendingDeleteMemoryId != null) {
+      return await _handlePendingDeleteConfirmation(lower);
+    }
+
     // ─── 1. GREETINGS & CASUAL CONVERSATION (Do NOT save junk) ───
     if (_isCasualGreeting(lower)) {
       return ConversationAction(
@@ -114,6 +121,15 @@ class KeeConversationEngine {
       );
     }
 
+    // ─── 2.5. SENSITIVE CREDENTIALS GUARD (Never auto-store) ───────
+    if (_isSensitiveCredential(lower)) {
+      return const ConversationAction(
+        responseText:
+            "For your security, I don't automatically store passwords, PINs, or authentication codes. Please keep sensitive credentials in a dedicated password manager.",
+        intent: MessageIntent.casualConversation,
+      );
+    }
+
     // ─── 3. PREFERENCE UPDATE / CORRECTION ────────────────────────
     // e.g. "I no longer prefer dark mode. I prefer light mode."
     // e.g. "Change my preference for coffee to tea."
@@ -121,10 +137,24 @@ class KeeConversationEngine {
       return await _handlePreferenceUpdate(text);
     }
 
+    // ─── 3.5. EXPLICIT FORGET / DELETE OR MEMORY UPDATE ───────────
+    final forgetTarget = _extractForgetTarget(text);
+    if (forgetTarget != null) {
+      return await _handleForgetRequest(forgetTarget);
+    }
+    final updateRequest = _extractMemoryUpdateRequest(text);
+    if (updateRequest != null) {
+      return await _handleMemoryUpdateRequest(
+        updateRequest.$1,
+        updateRequest.$2,
+      );
+    }
+
     // ─── 4. EXPLICIT MEMORY COMMAND PREFIXES ──────────────────────
-    // e.g. "Remember that...", "Don't forget that...", "Keep this in mind", "Save this for later"
+    // e.g. "Remember that...", "Please remember...", "Can you remember...",
+    //      "Save that...", "Note that...", "Record that...", "Store this..."
     final explicitMatch = RegExp(
-      r'^(remember\s+that|remember\s+this|remember|don\x27?t\s+forget\s+that|keep\s+this\s+in\s+mind|keep\s+in\s+mind\s+that|i\s+want\s+you\s+to\s+know\s+that|save\s+this\s+for\s+later|save\s+this|this\s+is\s+important\s+to\s+me)[,:\s]+',
+      r'^(?:(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|help\s+me\s+)?(?:remember(?:\s+that|\s+this)?|don\x27?t\s+forget(?:\s+that|\s+this)?|keep\s+this\s+in\s+mind(?:\s+that)?|keep\s+in\s+mind(?:\s+that)?|save\s+this\s+for\s+later|save\s+that\s+for\s+later|save\s+this|save\s+that|note\s+that|note\s+this|record\s+that|record\s+this|store\s+this|store\s+that)|i\s+want\s+you\s+to\s+know\s+that|this\s+is\s+important\s+to\s+me)[,:\s]+',
       caseSensitive: false,
     ).firstMatch(text);
 
@@ -132,7 +162,10 @@ class KeeConversationEngine {
     bool isExplicitSave = false;
     if (explicitMatch != null) {
       isExplicitSave = true;
-      effectiveText = text.substring(explicitMatch.end).trim();
+      effectiveText = text
+          .substring(explicitMatch.end)
+          .replaceAll(RegExp(r'\?+$'), '')
+          .trim();
       if (effectiveText.isEmpty) effectiveText = text;
     }
     final effectiveLower = effectiveText.toLowerCase();
@@ -327,8 +360,6 @@ class KeeConversationEngine {
       createdAt: now,
       updatedAt: now,
     );
-    await _reminderRepo.createReminder(reminder);
-
     // 2. Save underlying Task in SQLite
     final task = TaskModel(
       id: taskId,
@@ -341,7 +372,6 @@ class KeeConversationEngine {
       createdAt: now,
       updatedAt: now,
     );
-    await _reminderRepo.createTask(task);
 
     // 3. Save Memory record for recall
     final memory = MemoryModel(
@@ -358,7 +388,18 @@ class KeeConversationEngine {
       createdAt: now,
       updatedAt: now,
     );
-    await _memoryRepo.createMemory(memory);
+
+    try {
+      await _reminderRepo.createReminder(reminder);
+      await _reminderRepo.createTask(task);
+      await _memoryRepo.createMemory(memory);
+    } catch (e) {
+      return const ConversationAction(
+        responseText:
+            "I couldn't save that reminder right now because storage failed. Please try again.",
+        intent: MessageIntent.reminder,
+      );
+    }
 
     // 4. Schedule local notification on device
     final notificationId =
@@ -415,7 +456,15 @@ class KeeConversationEngine {
         processedContent: 'User preference: ${classification.title}',
         updatedAt: now,
       );
-      await _memoryRepo.updateMemory(updated);
+      try {
+        await _memoryRepo.updateMemory(updated);
+      } catch (e) {
+        return const ConversationAction(
+          responseText:
+              "I couldn't update that preference right now because storage failed. Please try again.",
+          intent: MessageIntent.preference,
+        );
+      }
       return ConversationAction(
         responseText:
             "I've updated your preference for **${classification.title}**.",
@@ -435,7 +484,15 @@ class KeeConversationEngine {
       createdAt: now,
       updatedAt: now,
     );
-    await _memoryRepo.createMemory(memory);
+    try {
+      await _memoryRepo.createMemory(memory);
+    } catch (e) {
+      return const ConversationAction(
+        responseText:
+            "I couldn't save that preference right now because storage failed. Please try again.",
+        intent: MessageIntent.preference,
+      );
+    }
 
     return ConversationAction(
       responseText:
@@ -520,7 +577,15 @@ class KeeConversationEngine {
       createdAt: now,
       updatedAt: now,
     );
-    await _memoryRepo.createMemory(memory);
+    try {
+      await _memoryRepo.createMemory(memory);
+    } catch (e) {
+      return const ConversationAction(
+        responseText:
+            "I couldn't save that memory right now because storage failed. Please try again.",
+        intent: MessageIntent.importantDate,
+      );
+    }
 
     final personNotice = classification.associatedPerson != null
         ? " for ${classification.associatedPerson}"
@@ -551,7 +616,15 @@ class KeeConversationEngine {
       createdAt: now,
       updatedAt: now,
     );
-    await _memoryRepo.createMemory(memory);
+    try {
+      await _memoryRepo.createMemory(memory);
+    } catch (e) {
+      return const ConversationAction(
+        responseText:
+            "I couldn't save that idea right now because storage failed. Please try again.",
+        intent: MessageIntent.idea,
+      );
+    }
 
     return ConversationAction(
       responseText:
@@ -577,8 +650,6 @@ class KeeConversationEngine {
       createdAt: now,
       updatedAt: now,
     );
-    await _memoryRepo.createMemory(memory);
-
     final task = TaskModel(
       id: taskId,
       memoryId: memoryId,
@@ -588,7 +659,17 @@ class KeeConversationEngine {
       createdAt: now,
       updatedAt: now,
     );
-    await _reminderRepo.createTask(task);
+
+    try {
+      await _memoryRepo.createMemory(memory);
+      await _reminderRepo.createTask(task);
+    } catch (e) {
+      return const ConversationAction(
+        responseText:
+            "I couldn't save that commitment right now because storage failed. Please try again.",
+        intent: MessageIntent.shoppingOrTask,
+      );
+    }
 
     return ConversationAction(
       responseText:
@@ -618,13 +699,189 @@ class KeeConversationEngine {
       createdAt: now,
       updatedAt: now,
     );
-    await _memoryRepo.createMemory(memory);
+    try {
+      await _memoryRepo.createMemory(memory);
+    } catch (e) {
+      return const ConversationAction(
+        responseText:
+            "I couldn't save that memory right now because storage failed. Please try again.",
+        intent: MessageIntent.eventOrFact,
+      );
+    }
 
     return ConversationAction(
       responseText: "Noted. I've remembered this: **${classification.title}**.",
       intent: MessageIntent.eventOrFact,
       savedMemory: memory,
     );
+  }
+
+  Future<ConversationAction> _handlePendingDeleteConfirmation(
+    String lower,
+  ) async {
+    final id = _pendingDeleteMemoryId!;
+    final title = _pendingDeleteMemoryTitle ?? 'that memory';
+    final isConfirm = RegExp(
+      r'^(yes|yeah|yep|confirm|do it|go ahead|delete it|forget it|please|sure)\b',
+    ).hasMatch(lower);
+    final isCancel = RegExp(
+      r'^(no|nope|cancel|never mind|nevermind|keep it|stop|don\x27?t)\b',
+    ).hasMatch(lower);
+
+    if (isConfirm) {
+      _pendingDeleteMemoryId = null;
+      _pendingDeleteMemoryTitle = null;
+      try {
+        await _memoryRepo.deleteMemory(id);
+        return ConversationAction(
+          responseText: "I've forgotten **$title**.",
+          intent: MessageIntent.casualConversation,
+        );
+      } catch (e) {
+        return const ConversationAction(
+          responseText:
+              "I couldn't delete that memory right now because storage failed. Your memory is still intact.",
+          intent: MessageIntent.casualConversation,
+        );
+      }
+    }
+
+    if (isCancel) {
+      _pendingDeleteMemoryId = null;
+      _pendingDeleteMemoryTitle = null;
+      return ConversationAction(
+        responseText: "Okay, I kept **$title**.",
+        intent: MessageIntent.casualConversation,
+      );
+    }
+
+    return ConversationAction(
+      responseText:
+          "Please confirm: should I forget **$title**? Say yes to delete or no to keep it.",
+      intent: MessageIntent.casualConversation,
+      requiresClarification: true,
+    );
+  }
+
+  String? _extractForgetTarget(String text) {
+    final match = RegExp(
+      r'^(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:forget|delete|remove)\s+(?:the\s+memory\s+(?:about|of)\s+|my\s+memory\s+(?:about|of)\s+|that\s+|about\s+)?(.+?)(?:\s+from\s+(?:my\s+)?memory)?[\.?!]*$',
+      caseSensitive: false,
+    ).firstMatch(text.trim());
+    if (match == null) return null;
+    final target = match.group(1)?.trim() ?? '';
+    return target.isEmpty ? null : target;
+  }
+
+  Future<ConversationAction> _handleForgetRequest(String target) async {
+    final matches = await _findMatchingMemories(target);
+    if (matches.isEmpty) {
+      return ConversationAction(
+        responseText: "I couldn't find any saved memory matching \"$target\".",
+        intent: MessageIntent.casualConversation,
+      );
+    }
+    if (matches.length > 1) {
+      final options = matches.take(3).map((m) => '**${m.title}**').join(', ');
+      return ConversationAction(
+        responseText:
+            "I found multiple memories matching \"$target\": $options. Which one should I forget?",
+        intent: MessageIntent.casualConversation,
+        requiresClarification: true,
+        citedMemories: matches.take(3).toList(),
+      );
+    }
+
+    final match = matches.first;
+    _pendingDeleteMemoryId = match.id;
+    _pendingDeleteMemoryTitle = match.title;
+    return ConversationAction(
+      responseText:
+          "Are you sure you want me to forget **${match.title}**? Say yes to confirm or no to keep it.",
+      intent: MessageIntent.casualConversation,
+      requiresClarification: true,
+      citedMemories: [match],
+    );
+  }
+
+  (String, String)? _extractMemoryUpdateRequest(String text) {
+    final match = RegExp(
+      r'^(?:please\s+)?(?:update|change)\s+(?:my\s+memory\s+(?:about|for)\s+|the\s+memory\s+(?:about|for)\s+|my\s+)?(.+?)\s+to\s+(.+?)[\.?!]*$',
+      caseSensitive: false,
+    ).firstMatch(text.trim());
+    if (match == null) return null;
+    final target = match.group(1)?.trim() ?? '';
+    final newValue = match.group(2)?.trim() ?? '';
+    if (target.isEmpty || newValue.isEmpty) return null;
+    return (target, newValue);
+  }
+
+  Future<ConversationAction> _handleMemoryUpdateRequest(
+    String target,
+    String newValue,
+  ) async {
+    if (_isSensitiveCredential(newValue.toLowerCase())) {
+      return const ConversationAction(
+        responseText:
+            "For your security, I don't automatically store passwords, PINs, or authentication codes.",
+        intent: MessageIntent.casualConversation,
+      );
+    }
+
+    final matches = await _findMatchingMemories(target);
+    if (matches.isEmpty) {
+      return ConversationAction(
+        responseText:
+            "I couldn't find an existing memory matching \"$target\" to update.",
+        intent: MessageIntent.casualConversation,
+      );
+    }
+    if (matches.length > 1) {
+      final options = matches.take(3).map((m) => '**${m.title}**').join(', ');
+      return ConversationAction(
+        responseText:
+            "I found multiple memories matching \"$target\": $options. Which one would you like to update?",
+        intent: MessageIntent.casualConversation,
+        requiresClarification: true,
+        citedMemories: matches.take(3).toList(),
+      );
+    }
+
+    final existing = matches.first;
+    final updated = existing.copyWith(
+      title: newValue,
+      originalContent: '$target: $newValue',
+      updatedAt: DateTime.now(),
+    );
+    try {
+      await _memoryRepo.updateMemory(updated);
+      return ConversationAction(
+        responseText: "I've updated **${existing.title}** to **$newValue**.",
+        intent: MessageIntent.eventOrFact,
+        savedMemory: updated,
+      );
+    } catch (e) {
+      return const ConversationAction(
+        responseText:
+            "I couldn't update that memory right now because storage failed. Please try again.",
+        intent: MessageIntent.eventOrFact,
+      );
+    }
+  }
+
+  Future<List<MemoryModel>> _findMatchingMemories(String query) async {
+    final all = await _memoryRepo.getAllMemories();
+    final terms = query
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length > 2)
+        .toList();
+    if (terms.isEmpty) return [];
+    return all.where((m) {
+      final haystack = '${m.title} ${m.originalContent} ${m.category}'
+          .toLowerCase();
+      return terms.any((t) => haystack.contains(t));
+    }).toList();
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -709,9 +966,15 @@ class KeeConversationEngine {
     ).hasMatch(lower);
   }
 
+  bool _isSensitiveCredential(String lower) {
+    return RegExp(
+      r'\b(password|passcode|pin\s*code|my\s+pin\b|otp|one[\s-]?time\s+password|2fa|two[\s-]?factor|auth(?:entication)?\s+code|verification\s+code|secret\s+key|api\s+key|private\s+key|cvv|social\s+security|ssn)\b',
+    ).hasMatch(lower);
+  }
+
   bool _isPersonalExperienceOrFact(String lower) {
     return RegExp(
-      r'\b(i met|i attended|i visited|i went to|i saw|i graduated|i work at|i live in|my name is|my phone number is|my email is|my address is|my pin|my password)\b',
+      r'\b(i\s+met|i\s+attended|i\s+visited|i\s+went\s+to|i\s+saw|i\s+graduated|i\s+studied|i\s+work\s+(?:at|for|as)|i\s+live\s+in|i\s+moved\s+to|i\s+am\s+allergic\s+to|i\s+parked|i\s+put\s+my|i\s+have\s+a\s+(?:dog|cat|pet)|i\s+usually|every\s+(?:morning|evening|day|week)\s+i|my\s+name\s+is|my\s+phone\s+number\s+is|my\s+email\s+is|my\s+address\s+is|my\s+office\s+is|my\s+car\s+is|my\s+doctor\s+is|my\s+routine\s+is|my\s+locker\s+is|my\s+keys\s+are)\b',
     ).hasMatch(lower);
   }
 

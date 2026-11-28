@@ -26,6 +26,7 @@ class FlutterTtsService implements ITextToSpeechService {
   final FlutterTts _flutterTts = FlutterTts();
   bool _isSpeaking = false;
   bool _isInitialized = false;
+  bool _hasSignaledUtterance = false;
 
   final StreamController<bool> _speakingStateController =
       StreamController<bool>.broadcast();
@@ -71,19 +72,26 @@ class FlutterTtsService implements ITextToSpeechService {
       _flutterTts.setCompletionHandler(() {
         _isSpeaking = false;
         _speakingStateController.add(false);
-        onCompletion?.call();
+        if (!_hasSignaledUtterance) {
+          _hasSignaledUtterance = true;
+          onCompletion?.call();
+        }
       });
 
       _flutterTts.setCancelHandler(() {
         _isSpeaking = false;
         _speakingStateController.add(false);
+        _hasSignaledUtterance = true;
         onCancel?.call();
       });
 
       _flutterTts.setErrorHandler((msg) {
         _isSpeaking = false;
         _speakingStateController.add(false);
-        onError?.call(msg.toString());
+        if (!_hasSignaledUtterance) {
+          _hasSignaledUtterance = true;
+          onError?.call(msg.toString());
+        }
       });
 
       _isInitialized = true;
@@ -106,13 +114,30 @@ class FlutterTtsService implements ITextToSpeechService {
       if (_isSpeaking) {
         await stop();
       }
+      _hasSignaledUtterance = false;
       _isSpeaking = true;
       _speakingStateController.add(true);
-      await _flutterTts.speak(text);
+      final result = await _flutterTts.speak(text);
+      if (result == 0 && !_hasSignaledUtterance) {
+        _isSpeaking = false;
+        _speakingStateController.add(false);
+        _hasSignaledUtterance = true;
+        onError?.call('TTS engine failed to start speech');
+      } else if (!kIsWeb && !_hasSignaledUtterance) {
+        // awaitSpeakCompletion(true) completed without firing handler
+        _isSpeaking = false;
+        _speakingStateController.add(false);
+        _hasSignaledUtterance = true;
+        onCompletion?.call();
+      }
     } catch (e) {
       _isSpeaking = false;
       _speakingStateController.add(false);
       debugPrint('[FlutterTtsService] Speak error: $e');
+      if (!_hasSignaledUtterance) {
+        _hasSignaledUtterance = true;
+        onError?.call(e.toString());
+      }
     }
   }
 

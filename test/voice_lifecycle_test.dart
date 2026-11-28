@@ -449,6 +449,131 @@ void main() {
             equals(AssistantState.idle),
           );
           expect(bridge.resumeWakeWordCalls, equals(2));
+
+          await ctrl.startListening();
+          speech.emitError('error_speech_timeout');
+          await Future<void>.delayed(Duration.zero);
+
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.idle),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(3));
+        },
+      );
+
+      test(
+        'consecutive wake-word turns both complete and resume Vosk',
+        () async {
+          final bridge = _FakeNativeVoiceBridge();
+          final speech = _FakeSpeechService(bridge.events);
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
+
+          final ctrl = container.read(voiceAssistantProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+
+          // Turn 1
+          await ctrl.handleWakeWordActivation(null);
+          speech.emitResult('hello kee', isFinal: true);
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          tts.completeSpeaking();
+          await Future<void>.delayed(Duration.zero);
+          expect(bridge.resumeWakeWordCalls, equals(1));
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.idle),
+          );
+
+          // Turn 2
+          await ctrl.handleWakeWordActivation(null);
+          speech.emitResult('what time is it', isFinal: true);
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          tts.completeSpeaking();
+          await Future<void>.delayed(Duration.zero);
+          expect(bridge.resumeWakeWordCalls, equals(2));
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.idle),
+          );
+        },
+      );
+
+      test(
+        'TTS failure restores the microphone and recovers cleanly',
+        () async {
+          final bridge = _FakeNativeVoiceBridge();
+          final speech = _FakeSpeechService(bridge.events);
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
+
+          final ctrl = container.read(voiceAssistantProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+
+          await ctrl.startListening();
+          speech.emitResult('hello kee', isFinal: true);
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.speaking),
+          );
+
+          tts.failSpeaking('TTS synthesis error');
+          await Future<void>.delayed(Duration.zero);
+
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.error),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(1));
+        },
+      );
+
+      test(
+        'stale callbacks from previous session cannot terminate a newer session',
+        () async {
+          final bridge = _FakeNativeVoiceBridge();
+          final speech = _FakeSpeechService(bridge.events);
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
+
+          final ctrl = container.read(voiceAssistantProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+
+          await ctrl.startListening();
+          await ctrl.dismissSession();
+          expect(bridge.resumeWakeWordCalls, equals(1));
+
+          // Start a newer session
+          await ctrl.startListening();
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.listening),
+          );
+
+          // Stale TTS completion cannot end the newer listening session
+          tts.completeSpeaking();
+          await Future<void>.delayed(Duration.zero);
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.listening),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(1));
         },
       );
 

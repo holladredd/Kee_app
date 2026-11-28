@@ -46,6 +46,12 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     _speech = ref.read(speechRecognitionServiceProvider);
     _wakeWord = ref.read(wakeWordServiceProvider);
 
+    ref.onDispose(() {
+      _silenceTimer?.cancel();
+      _continuousTurnTimer?.cancel();
+      _errorRecoveryTimer?.cancel();
+    });
+
     _initializeServices();
 
     return const VoiceAssistantState();
@@ -356,6 +362,11 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
       );
 
       await _tts.speak(reply);
+      if (sessionId == _activeSessionId &&
+          state.isSpeaking &&
+          !_tts.isSpeaking) {
+        _onTtsCompleted();
+      }
     } catch (e) {
       if (sessionId != _activeSessionId) return;
       await _handleError('Could not process request: $e');
