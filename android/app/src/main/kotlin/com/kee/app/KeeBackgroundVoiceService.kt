@@ -463,7 +463,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         cancelAutoDismissOverlay()
         isOverlayCapturingSpeech = true
         mainHandler.post {
-            updateOverlayState("Listening...", "#E8D0B2", "Speak")
+            orbAnimView?.setState(OrbState.LISTENING)
+            updateOverlayState("Listening...", "Speak")
             tvTranscript?.text = "Speak naturally..."
         }
 
@@ -492,9 +493,11 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         cancelAutoDismissOverlay()
         isOverlayCapturingSpeech = false
         isProcessingRequest = true
+        lastUserQuery = query
 
         mainHandler.post {
-            updateOverlayState("Understanding...", "#F59E0B", "Wait")
+            orbAnimView?.setState(OrbState.THINKING)
+            updateOverlayState("Thinking...", "Wait")
             speechRecognizer?.stopListening()
         }
 
@@ -506,7 +509,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 if (!completed) {
                     completed = true
                     Log.w("KeeVoiceService", "queryHandler timed out for query: $query")
-                    displayAndSpeakResponse("Kee is not connected right now. Please open the Kee app and try again.")
+                    displayAndSpeakResponse("Kee is not connected right now. Please open the Kee app and try again.", isError = true)
                 }
             }
             mainHandler.postDelayed(timeoutRunnable, 15000L)
@@ -516,16 +519,15 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                     if (!completed) {
                         completed = true
                         mainHandler.removeCallbacks(timeoutRunnable)
-                        displayAndSpeakResponse(response)
+                        displayAndSpeakResponse(response, isError = false)
                     }
                 }
             }
         } else {
-            // Fallback response if Flutter engine is unattached (never claim data was saved)
             Log.w("KeeVoiceService", "queryHandler unavailable for query: $query")
             val fallback = "Kee is not connected right now. Please open the Kee app and try again."
             mainHandler.post {
-                displayAndSpeakResponse(fallback)
+                displayAndSpeakResponse(fallback, isError = true)
             }
         }
     }
