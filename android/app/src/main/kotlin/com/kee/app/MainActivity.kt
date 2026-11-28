@@ -24,7 +24,7 @@ class MainActivity : FlutterActivity() {
 
     private fun isHandsFreeEnabled(): Boolean {
         return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-            .getBoolean(KEY_HANDS_FREE, false)
+            .getBoolean(KEY_HANDS_FREE, true)
     }
 
     private fun setHandsFreeEnabled(enabled: Boolean) {
@@ -96,6 +96,24 @@ class MainActivity : FlutterActivity() {
                     val target = call.argument<String>("target") ?: ""
                     result.success(callContactOrNumber(target))
                 }
+                "pauseWakeWord" -> {
+                    if (KeeBackgroundVoiceService.isRunning) {
+                        val pauseIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
+                            action = KeeBackgroundVoiceService.ACTION_PAUSE_LISTENING
+                        }
+                        startService(pauseIntent)
+                    }
+                    result.success(true)
+                }
+                "resumeWakeWord" -> {
+                    if (KeeBackgroundVoiceService.isRunning && isHandsFreeEnabled()) {
+                        val resumeIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
+                            action = KeeBackgroundVoiceService.ACTION_RESUME_LISTENING
+                        }
+                        startService(resumeIntent)
+                    }
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -158,13 +176,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        // While Kee is in the foreground, pause background wake-word mic access
-        // so it doesn't collide with Kee's in-app voice assistant or spam the mic
-        if (KeeBackgroundVoiceService.isRunning) {
-            val pauseIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
-                action = KeeBackgroundVoiceService.ACTION_PAUSE_LISTENING
-            }
-            startService(pauseIntent)
+        // Auto-start the background voice service when the app comes to foreground
+        // if hands-free is enabled but the service is not yet running.
+        // Do NOT pause Vosk here — microphone handover is now managed by
+        // Flutter's pauseWakeWord/resumeWakeWord calls around speech sessions.
+        if (isHandsFreeEnabled() && !KeeBackgroundVoiceService.isRunning) {
+            startVoiceService()
         }
     }
 

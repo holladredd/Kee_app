@@ -25,7 +25,7 @@ class VoiceAssistantState {
     this.lastAssistantResponse = '',
     this.soundLevel = 0.0,
     this.errorMessage,
-    this.isHandsFreeEnabled = false,
+    this.isHandsFreeEnabled = true,
     this.isContinuousMode = false,
     this.isExpanded = false,
     this.speechRate = 0.5,

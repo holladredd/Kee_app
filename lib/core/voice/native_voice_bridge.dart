@@ -197,6 +197,28 @@ class NativeVoiceBridge {
     }
   }
 
+  /// Pause native Vosk wake-word listener so Flutter speech recognition can
+  /// use the microphone without conflict.
+  Future<void> pauseWakeWord() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('pauseWakeWord');
+    } catch (e) {
+      debugPrint('[NativeVoiceBridge] pauseWakeWord error: $e');
+    }
+  }
+
+  /// Resume native Vosk wake-word listener after Flutter speech recognition
+  /// has released the microphone.
+  Future<void> resumeWakeWord() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('resumeWakeWord');
+    } catch (e) {
+      debugPrint('[NativeVoiceBridge] resumeWakeWord error: $e');
+    }
+  }
+
   Future<bool> downloadWakeWordModel({
     void Function(int progress)? onProgress,
   }) async {

@@ -51,17 +51,28 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   }
 
   void _initializeServices() {
-    // Restore persisted hands-free preference on Android so user only enables it once
+    // Restore persisted hands-free preference on Android and auto-start the
+    // background wake-word service.  With the new default of true, first-launch
+    // users get hands-free automatically.  An explicit user disable (false in
+    // SharedPreferences) is still respected.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       Future.microtask(() async {
         try {
           final bridge = ref.read(nativeVoiceBridgeProvider);
-          final wasEnabled = await bridge.getPersistedHandsFree();
-          if (wasEnabled) {
-            state = state.copyWith(isHandsFreeEnabled: true);
+          final enabled = await bridge.getPersistedHandsFree();
+          state = state.copyWith(isHandsFreeEnabled: enabled);
+          if (enabled) {
             final running = await bridge.isServiceRunning();
             if (!running) {
-              await bridge.startBackgroundListening();
+              // Check if the Vosk model is already downloaded — only auto-start
+              // the foreground service when the model is ready so we don't hit
+              // a half-initialised state on first launch (the setup dialog will
+              // handle download when the user first visits Settings or taps the
+              // mic).
+              final modelReady = await bridge.isWakeWordModelReady();
+              if (modelReady) {
+                await bridge.startBackgroundListening();
+              }
             }
           }
         } catch (e) {
@@ -132,6 +143,16 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     );
     _wakeWord.setAssistantActive(false);
 
+    // Resume native Vosk after error so wake-word detection isn't left disabled
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        state.isHandsFreeEnabled) {
+      try {
+        final bridge = ref.read(nativeVoiceBridgeProvider);
+        bridge.resumeWakeWord();
+      } catch (_) {}
+    }
+
     // Auto-recover after 4 seconds so the assistant UI is never permanently blocked
     _errorRecoveryTimer = Timer(const Duration(seconds: 4), () {
       if (state.state == AssistantState.error) {
@@ -190,6 +211,18 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     );
 
     _wakeWord.setAssistantActive(true);
+
+    // Pause native Vosk wake-word listener before Flutter grabs the mic
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        state.isHandsFreeEnabled) {
+      try {
+        final bridge = ref.read(nativeVoiceBridgeProvider);
+        await bridge.pauseWakeWord();
+      } catch (e) {
+        debugPrint('[VoiceAssistantController] pauseWakeWord error: $e');
+      }
+    }
 
     try {
       await _speech.startListening(
@@ -349,6 +382,18 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     );
 
     _wakeWord.setAssistantActive(false);
+
+    // Resume native Vosk wake-word listener now that Flutter released the mic
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        state.isHandsFreeEnabled) {
+      try {
+        final bridge = ref.read(nativeVoiceBridgeProvider);
+        await bridge.resumeWakeWord();
+      } catch (e) {
+        debugPrint('[VoiceAssistantController] resumeWakeWord error: $e');
+      }
+    }
   }
 
   /// Toggle hands-free wake word detection
