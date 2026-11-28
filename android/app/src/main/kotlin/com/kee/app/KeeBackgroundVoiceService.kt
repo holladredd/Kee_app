@@ -532,31 +532,40 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun displayAndSpeakResponse(reply: String) {
+    private fun displayAndSpeakResponse(reply: String, isError: Boolean = false) {
         isProcessingRequest = false
-        tvTranscript?.text = reply
+        mainHandler.post {
+            tvTranscript?.text = reply
+            if (isError) {
+                orbAnimView?.setState(OrbState.ERROR)
+                updateOverlayState("Error", "Retry")
+            }
+        }
 
         // Speak reply using native Android TTS
-        if (isTtsReady && tts != null) {
+        if (isTtsReady && tts != null && !isError) {
             val res = tts?.speak(reply, TextToSpeech.QUEUE_FLUSH, null, "KEE_REPLY")
             if (res == TextToSpeech.SUCCESS) {
                 isSpeaking = true
-                updateOverlayState("Kee Speaking", "#34D399", "Interrupt")
+                mainHandler.post {
+                    orbAnimView?.setState(OrbState.SPEAKING)
+                    updateOverlayState("Kee Speaking", "Interrupt")
+                }
                 return
             }
         }
 
         isSpeaking = false
-        updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
-        scheduleAutoDismissOverlay()
+        mainHandler.post {
+            orbAnimView?.setState(if (isError) OrbState.ERROR else OrbState.IDLE)
+            updateOverlayState(if (isError) "Failed — tap Retry" else "Tap Speak to ask", "Speak")
+            scheduleAutoDismissOverlay()
+        }
     }
 
-    private fun updateOverlayState(statusText: String, accentHex: String, micLabel: String) {
+    private fun updateOverlayState(statusText: String, micLabel: String) {
         tvStatus?.text = statusText
         btnActionMic?.text = micLabel
-        val color = Color.parseColor(accentHex)
-        (orbView?.background as? GradientDrawable)?.setColor(color)
-        (orbRingView?.background as? GradientDrawable)?.setStroke(3, Color.argb(110, Color.red(color), Color.green(color), Color.blue(color)))
     }
 
     private fun handleSpeechError(error: Int) {
@@ -569,11 +578,9 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
         if (isListeningForWakeWord) {
             if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                // Normal silence timeout — wait 1.5s before next window instead of hammering mic every 500ms
                 consecutiveErrors = 0
                 restartListeningAfterDelay(1500)
             } else {
-                // Busy / audio / network error — exponential backoff (2s, 4s, 8s, max 15s)
                 consecutiveErrors++
                 val backoffMs = (2000L * (1 shl consecutiveErrors.coerceAtMost(3))).coerceAtMost(15000L)
                 restartListeningAfterDelay(backoffMs)
@@ -582,11 +589,13 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
             isOverlayCapturingSpeech = false
             if (error == SpeechRecognizer.ERROR_NO_MATCH || error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                 mainHandler.post {
-                    updateOverlayState("Tap Speak to ask", "#E8D0B2", "Speak")
+                    orbAnimView?.setState(OrbState.IDLE)
+                    updateOverlayState("Tap Speak to ask", "Speak")
                 }
             } else {
                 mainHandler.post {
-                    updateOverlayState("Tap Speak to retry", "#EF4444", "Retry")
+                    orbAnimView?.setState(OrbState.ERROR)
+                    updateOverlayState("Tap Retry to try again", "Retry")
                 }
             }
         }
