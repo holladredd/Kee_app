@@ -1,12 +1,12 @@
 package com.kee.app
 
 import android.Manifest
+import android.animation.ValueAnimator
 import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
-import android.graphics.PixelFormat
+import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.os.*
 import android.provider.Settings
@@ -17,6 +17,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import android.view.*
+import android.view.animation.LinearInterpolator
 import android.widget.*
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -26,6 +27,7 @@ import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener as VoskRecognitionListener
 import org.vosk.android.SpeechService as VoskSpeechService
 import java.util.*
+import kotlin.math.*
 
 class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
 
@@ -103,13 +105,14 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         "hi key"
     )
 
-    // UI elements in floating overlay
-    private var tvStatus: TextView? = null
+    // ── Overlay UI references ─────────────────────────────────────────────────
+    private var orbAnimView: KeeHolographicOrbView? = null
     private var tvTranscript: TextView? = null
-    private var orbView: View? = null
-    private var orbRingView: View? = null
+    private var tvStatus: TextView? = null
     private var btnActionMic: TextView? = null
     private var overlayParams: WindowManager.LayoutParams? = null
+    // Last user query preserved for Retry
+    private var lastUserQuery: String? = null
 
     override fun onCreate() {
         super.onCreate()
