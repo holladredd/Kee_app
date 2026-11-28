@@ -20,7 +20,11 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.kee.app/voice_service"
     private val PREFS_NAME = "kee_voice_prefs"
     private val KEY_HANDS_FREE = "is_hands_free_enabled"
+    private val KEY_HANDS_FREE_PROMPTED = "has_prompted_hands_free"
+    private val REQ_CODE_VOICE_PERMS = 2002
     private var methodChannel: MethodChannel? = null
+    private var isServiceStartPending = false
+    private var pendingVoicePermissionResult: MethodChannel.Result? = null
 
     private fun isHandsFreeEnabled(): Boolean {
         return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
@@ -34,6 +38,25 @@ class MainActivity : FlutterActivity() {
             .apply()
     }
 
+    private fun hasPromptedHandsFree(): Boolean {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getBoolean(KEY_HANDS_FREE_PROMPTED, false)
+    }
+
+    private fun setHandsFreePrompted(prompted: Boolean) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HANDS_FREE_PROMPTED, prompted)
+            .apply()
+    }
+
+    private fun hasRecordAudioPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
@@ -41,11 +64,26 @@ class MainActivity : FlutterActivity() {
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "startBackgroundListening" -> {
-                    startVoiceService()
-                    result.success(true)
+                    setHandsFreeEnabled(true)
+                    val started = startVoiceServiceIfEligible()
+                    result.success(started)
                 }
                 "stopBackgroundListening" -> {
                     stopVoiceService()
+                    result.success(true)
+                }
+                "isMicrophonePermissionGranted" -> {
+                    result.success(hasRecordAudioPermission())
+                }
+                "requestVoicePermissions" -> {
+                    requestVoicePermissions(result)
+                }
+                "hasPromptedHandsFree" -> {
+                    result.success(hasPromptedHandsFree())
+                }
+                "setHandsFreePrompted" -> {
+                    val prompted = call.argument<Boolean>("prompted") ?: true
+                    setHandsFreePrompted(prompted)
                     result.success(true)
                 }
                 "isOverlayPermissionGranted" -> {
@@ -97,20 +135,23 @@ class MainActivity : FlutterActivity() {
                     result.success(callContactOrNumber(target))
                 }
                 "pauseWakeWord" -> {
-                    if (KeeBackgroundVoiceService.isRunning) {
-                        val pauseIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
-                            action = KeeBackgroundVoiceService.ACTION_PAUSE_LISTENING
+                    KeeBackgroundVoiceService.isFlutterSessionActive = true
+                    val service = KeeBackgroundVoiceService.instance
+                    if (KeeBackgroundVoiceService.isRunning && service != null) {
+                        service.pauseAndReleaseMic {
+                            result.success(true)
                         }
-                        startService(pauseIntent)
+                    } else {
+                        result.success(true)
                     }
-                    result.success(true)
                 }
                 "resumeWakeWord" -> {
-                    if (KeeBackgroundVoiceService.isRunning && isHandsFreeEnabled()) {
-                        val resumeIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
-                            action = KeeBackgroundVoiceService.ACTION_RESUME_LISTENING
-                        }
-                        startService(resumeIntent)
+                    KeeBackgroundVoiceService.isFlutterSessionActive = false
+                    val service = KeeBackgroundVoiceService.instance
+                    if (KeeBackgroundVoiceService.isRunning && service != null && isHandsFreeEnabled()) {
+                        service.resumeAfterFlutterSession()
+                    } else if (isHandsFreeEnabled()) {
+                        startVoiceServiceIfEligible()
                     }
                     result.success(true)
                 }
@@ -150,16 +191,74 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun startVoiceService() {
-        setHandsFreeEnabled(true)
+    private fun requestVoicePermissions(result: MethodChannel.Result) {
+        val needed = mutableListOf<String>()
+        if (!hasRecordAudioPermission()) {
+            needed.add(Manifest.permission.RECORD_AUDIO)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            needed.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        if (needed.isEmpty()) {
+            result.success(true)
+            return
+        }
+
+        pendingVoicePermissionResult?.success(false)
+        pendingVoicePermissionResult = result
+        ActivityCompat.requestPermissions(this, needed.toTypedArray(), REQ_CODE_VOICE_PERMS)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_CODE_VOICE_PERMS) {
+            pendingVoicePermissionResult?.success(hasRecordAudioPermission())
+            pendingVoicePermissionResult = null
+        }
+    }
+
+    private fun startVoiceServiceIfEligible(): Boolean {
+        if (!isHandsFreeEnabled()) return false
+        if (!hasRecordAudioPermission()) {
+            Log.d("KeeMainActivity", "Skipping voice service start: RECORD_AUDIO not granted yet")
+            return false
+        }
+        if (!KeeWakeWordModelManager.isModelReady(this)) {
+            Log.d("KeeMainActivity", "Skipping voice service start: Vosk model not ready yet")
+            return false
+        }
+        if (KeeBackgroundVoiceService.isRunning || isServiceStartPending) {
+            return true
+        }
+
+        isServiceStartPending = true
         val serviceIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
             action = KeeBackgroundVoiceService.ACTION_START_LISTENING
         }
-        ContextCompat.startForegroundService(this, serviceIntent)
+        try {
+            ContextCompat.startForegroundService(this, serviceIntent)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                isServiceStartPending = false
+            }, 2000L)
+            return true
+        } catch (e: Exception) {
+            isServiceStartPending = false
+            Log.e("KeeMainActivity", "Failed to start KeeBackgroundVoiceService: ${e.message}", e)
+            return false
+        }
     }
 
     private fun stopVoiceService() {
+        isServiceStartPending = false
         setHandsFreeEnabled(false)
+        KeeBackgroundVoiceService.isFlutterSessionActive = false
         val serviceIntent = Intent(this, KeeBackgroundVoiceService::class.java)
         stopService(serviceIntent)
     }
@@ -176,12 +275,16 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Auto-start the background voice service when the app comes to foreground
-        // if hands-free is enabled but the service is not yet running.
-        // Do NOT pause Vosk here — microphone handover is now managed by
-        // Flutter's pauseWakeWord/resumeWakeWord calls around speech sessions.
-        if (isHandsFreeEnabled() && !KeeBackgroundVoiceService.isRunning) {
-            startVoiceService()
+        // Authoritative startup path: auto-start background wake-word service
+        // only when hands-free is enabled, RECORD_AUDIO is granted, and Vosk
+        // model is ready. Does not pause Vosk on foreground entry.
+        if (KeeBackgroundVoiceService.isRunning) {
+            isServiceStartPending = false
+            if (isHandsFreeEnabled() && !KeeBackgroundVoiceService.isFlutterSessionActive) {
+                KeeBackgroundVoiceService.instance?.resumeAfterFlutterSession()
+            }
+        } else {
+            startVoiceServiceIfEligible()
         }
     }
 
@@ -200,13 +303,27 @@ class MainActivity : FlutterActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // Resume background wake-word detection whenever user leaves Kee if enabled once
-        if (isHandsFreeEnabled()) {
-            val resumeIntent = Intent(this, KeeBackgroundVoiceService::class.java).apply {
-                action = KeeBackgroundVoiceService.ACTION_RESUME_LISTENING
-            }
-            ContextCompat.startForegroundService(this, resumeIntent)
+        // Never restart Vosk while a Flutter voice session is still listening,
+        // processing, or speaking.
+        if (KeeBackgroundVoiceService.isFlutterSessionActive) {
+            Log.d("KeeMainActivity", "onUserLeaveHint: Flutter voice session active, keeping Vosk paused")
+            return
         }
+        if (isHandsFreeEnabled()) {
+            val service = KeeBackgroundVoiceService.instance
+            if (KeeBackgroundVoiceService.isRunning && service != null) {
+                service.resumeAfterFlutterSession()
+            } else {
+                startVoiceServiceIfEligible()
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        KeeBackgroundVoiceService.queryHandler = null
+        methodChannel?.setMethodCallHandler(null)
+        methodChannel = null
+        super.onDestroy()
     }
 
     private fun openInstalledApp(rawName: String): Map<String, Any?> {

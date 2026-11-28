@@ -3,6 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 abstract class ITextToSpeechService {
+  VoidCallback? onCompletion;
+  VoidCallback? onCancel;
+  Function(String error)? onError;
+
   Future<bool> initialize();
   Future<void> speak(String text);
   Future<void> stop();
@@ -23,11 +27,15 @@ class FlutterTtsService implements ITextToSpeechService {
   bool _isSpeaking = false;
   bool _isInitialized = false;
 
-  final StreamController<bool> _speakingStateController = StreamController<bool>.broadcast();
+  final StreamController<bool> _speakingStateController =
+      StreamController<bool>.broadcast();
 
   VoidCallback? onStart;
+  @override
   VoidCallback? onCompletion;
+  @override
   VoidCallback? onCancel;
+  @override
   Function(String error)? onError;
 
   @override
@@ -42,7 +50,9 @@ class FlutterTtsService implements ITextToSpeechService {
 
     try {
       // Audio focus & category configuration
-      await _flutterTts.setSpeechRate(0.5); // 0.5 is standard conversational speed in flutter_tts
+      await _flutterTts.setSpeechRate(
+        0.5,
+      ); // 0.5 is standard conversational speed in flutter_tts
       await _flutterTts.setPitch(1.0);
       await _flutterTts.setVolume(1.0);
 

@@ -40,6 +40,12 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         var isRunning = false
         var isOverlayShowing = false
 
+        @Volatile
+        var instance: KeeBackgroundVoiceService? = null
+
+        @Volatile
+        var isFlutterSessionActive = false
+
         // Callback to communicate with Flutter engine if active
         var queryHandler: ((String, (String) -> Unit) -> Unit)? = null
     }
@@ -67,8 +73,9 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     private val wakeCooldownMs = 2500L
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var voskConsecutiveErrors = 0
     private val restartRunnable = Runnable {
-        if (isRunning && !isPaused && !isProcessingRequest && !isSpeaking && !isOverlayShowing) {
+        if (isRunning && !isPaused && !isFlutterSessionActive && !isProcessingRequest && !isSpeaking && !isOverlayShowing) {
             startWakeWordListening()
         }
     }
@@ -90,10 +97,38 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     override fun onCreate() {
         super.onCreate()
         isRunning = true
+        instance = this
         createNotificationChannel()
         tts = TextToSpeech(this, this)
         initSpeechRecognizer()
         initVoskWakeWord()
+    }
+
+    /**
+     * Synchronously pauses Vosk wake-word listening and invokes [onReleased] only
+     * after [voskSpeechService] has stopped and released the microphone.
+     */
+    fun pauseAndReleaseMic(onReleased: () -> Unit) {
+        mainHandler.post {
+            isPaused = true
+            isFlutterSessionActive = true
+            mainHandler.removeCallbacks(restartRunnable)
+            stopVoskListening()
+            speechRecognizer?.cancel()
+            onReleased()
+        }
+    }
+
+    /**
+     * Resumes Vosk wake-word listening when the Flutter voice session finishes.
+     */
+    fun resumeAfterFlutterSession() {
+        mainHandler.post {
+            isFlutterSessionActive = false
+            isPaused = false
+            voskConsecutiveErrors = 0
+            startWakeWordListening()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -115,8 +150,13 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
                 return START_STICKY
             }
             ACTION_RESUME_LISTENING, ACTION_START_LISTENING, null -> {
+                if (isFlutterSessionActive) {
+                    Log.d("KeeVoiceService", "Ignoring wake-word resume while Flutter voice session is active")
+                    return START_STICKY
+                }
                 isPaused = false
                 consecutiveErrors = 0
+                voskConsecutiveErrors = 0
                 startWakeWordListening()
                 return START_STICKY
             }
@@ -249,12 +289,28 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         override fun onError(exception: Exception?) {
             Log.e("KeeVoiceService", "Vosk recognition error: ${exception?.message}", exception)
             isVoskListening = false
+            scheduleVoskRecovery(isError = true)
         }
 
         override fun onTimeout() {
             Log.d("KeeVoiceService", "Vosk recognition timeout")
             isVoskListening = false
+            scheduleVoskRecovery(isError = false)
         }
+    }
+
+    private fun scheduleVoskRecovery(isError: Boolean) {
+        if (!isRunning || isPaused || isFlutterSessionActive || isOverlayShowing || isProcessingRequest || isSpeaking) {
+            return
+        }
+        val delayMs = if (isError) {
+            voskConsecutiveErrors = (voskConsecutiveErrors + 1).coerceAtMost(4)
+            (1500L * (1 shl (voskConsecutiveErrors - 1))).coerceAtMost(15000L)
+        } else {
+            voskConsecutiveErrors = 0
+            500L
+        }
+        restartListeningAfterDelay(delayMs)
     }
 
     private fun handleVoskHypothesis(hypothesis: String?) {
@@ -298,7 +354,7 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun startWakeWordListening() {
-        if (isPaused || !isRunning || isOverlayShowing) return
+        if (isPaused || !isRunning || isOverlayShowing || isProcessingRequest || isSpeaking || isFlutterSessionActive) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             stopSelf()
             return
@@ -408,9 +464,23 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         // Delegate query to Flutter's KeeConversationEngine if alive
         val handler = queryHandler
         if (handler != null) {
+            var completed = false
+            val timeoutRunnable = Runnable {
+                if (!completed) {
+                    completed = true
+                    Log.w("KeeVoiceService", "queryHandler timed out for query: $query")
+                    displayAndSpeakResponse("Kee is not connected right now. Please open the Kee app and try again.")
+                }
+            }
+            mainHandler.postDelayed(timeoutRunnable, 15000L)
+
             handler(query) { response ->
                 mainHandler.post {
-                    displayAndSpeakResponse(response)
+                    if (!completed) {
+                        completed = true
+                        mainHandler.removeCallbacks(timeoutRunnable)
+                        displayAndSpeakResponse(response)
+                    }
                 }
             }
         } else {
@@ -802,6 +872,8 @@ class KeeBackgroundVoiceService : Service(), TextToSpeech.OnInitListener {
         Log.i("KeeVoiceService", "Destroying KeeBackgroundVoiceService")
         isRunning = false
         isPaused = true
+        isFlutterSessionActive = false
+        instance = null
         mainHandler.removeCallbacksAndMessages(null)
         stopVoskListening()
         try {

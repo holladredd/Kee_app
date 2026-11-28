@@ -38,6 +38,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   Timer? _continuousTurnTimer;
   Timer? _errorRecoveryTimer;
   bool _hasDispatchedFinalForTurn = false;
+  int _activeSessionId = 0;
 
   @override
   VoiceAssistantState build() {
@@ -51,32 +52,17 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
   }
 
   void _initializeServices() {
-    // Restore persisted hands-free preference on Android and auto-start the
-    // background wake-word service.  With the new default of true, first-launch
-    // users get hands-free automatically.  An explicit user disable (false in
-    // SharedPreferences) is still respected.
+    // Sync persisted hands-free preference on Android.
+    // MainActivity.onResume() is the single authoritative owner for starting
+    // KeeBackgroundVoiceService, preventing duplicate startup calls.
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       Future.microtask(() async {
         try {
           final bridge = ref.read(nativeVoiceBridgeProvider);
           final enabled = await bridge.getPersistedHandsFree();
           state = state.copyWith(isHandsFreeEnabled: enabled);
-          if (enabled) {
-            final running = await bridge.isServiceRunning();
-            if (!running) {
-              // Check if the Vosk model is already downloaded — only auto-start
-              // the foreground service when the model is ready so we don't hit
-              // a half-initialised state on first launch (the setup dialog will
-              // handle download when the user first visits Settings or taps the
-              // mic).
-              final modelReady = await bridge.isWakeWordModelReady();
-              if (modelReady) {
-                await bridge.startBackgroundListening();
-              }
-            }
-          }
         } catch (e) {
-          debugPrint('[VoiceAssistantController] Restore hands-free error: $e');
+          debugPrint('[VoiceAssistantController] Sync hands-free error: $e');
         }
       });
     }
@@ -86,55 +72,71 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
       handleWakeWordActivation(trailingQuery);
     };
 
-    // Initialize Speech Error Handling
-    final speech = _speech;
-    if (speech is SpeechToTextService) {
-      speech.onError = (err) {
-        final lower = err.toLowerCase();
-        if (lower.contains('no-speech') || lower.contains('aborted')) {
-          // If silence detected, gracefully return to idle rather than showing a red error
-          if (state.isListening && state.liveTranscript.isEmpty) {
-            state = state.copyWith(state: AssistantState.idle, soundLevel: 0.0);
-          }
-          return;
+    // Initialize Speech Error & Stop Handling
+    _speech.onError = (err) {
+      final sessionId = _activeSessionId;
+      final lower = err.toLowerCase();
+      if (lower.contains('no-speech') ||
+          lower.contains('aborted') ||
+          lower.contains('speech_timeout') ||
+          lower.contains('no_match')) {
+        // Silence/abort: cleanly dismiss session so Vosk wake-word resumes
+        if (state.isListening && !_hasDispatchedFinalForTurn) {
+          dismissSession();
         }
+        return;
+      }
 
-        String friendlyMessage;
-        if (lower.contains('network')) {
-          friendlyMessage = kIsWeb
-              ? 'Web speech requires cloud STT access. Please verify your connection or type below.'
-              : 'Voice recognition network error. Please check your connection.';
-        } else if (lower.contains('not-allowed') ||
-            lower.contains('permission')) {
-          friendlyMessage =
-              'Microphone permission denied. Allow mic access in your browser or device settings.';
-        } else {
-          friendlyMessage = 'Speech recognition notice: $err';
-        }
+      String friendlyMessage;
+      if (lower.contains('network')) {
+        friendlyMessage = kIsWeb
+            ? 'Web speech requires cloud STT access. Please verify your connection or type below.'
+            : 'Voice recognition network error. Please check your connection.';
+      } else if (lower.contains('not-allowed') ||
+          lower.contains('permission')) {
+        friendlyMessage =
+            'Microphone permission denied. Allow mic access in your browser or device settings.';
+      } else {
+        friendlyMessage = 'Speech recognition notice: $err';
+      }
 
+      if (sessionId == _activeSessionId) {
         _handleError(friendlyMessage);
-      };
-    }
+      }
+    };
+
+    _speech.onListeningStopped = () {
+      final sessionId = _activeSessionId;
+      Future.microtask(() {
+        if (sessionId != _activeSessionId) return;
+        if (state.isListening && !_hasDispatchedFinalForTurn) {
+          dismissSession();
+        }
+      });
+    };
 
     // Initialize TTS
-    final tts = _tts;
-    if (tts is FlutterTtsService) {
-      tts.onCompletion = () {
-        _onTtsCompleted();
-      };
-      tts.onCancel = () {
-        debugPrint('[VoiceAssistantController] TTS cancelled/interrupted');
-      };
-      tts.onError = (err) {
-        _handleError('Speech output notice: $err');
-      };
-    }
+    _tts.onCompletion = () {
+      _onTtsCompleted();
+    };
+    _tts.onCancel = () {
+      debugPrint('[VoiceAssistantController] TTS cancelled/interrupted');
+    };
+    _tts.onError = (err) {
+      _handleError('Speech output notice: $err');
+    };
   }
 
-  void _handleError(String message) {
+  Future<void> _handleError(String message) async {
     _silenceTimer?.cancel();
     _continuousTurnTimer?.cancel();
     _errorRecoveryTimer?.cancel();
+    final sessionId = ++_activeSessionId;
+
+    await _speech.stopListening();
+    await _tts.stop();
+
+    if (sessionId != _activeSessionId) return;
 
     state = state.copyWith(
       state: AssistantState.error,
@@ -149,13 +151,16 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
         state.isHandsFreeEnabled) {
       try {
         final bridge = ref.read(nativeVoiceBridgeProvider);
-        bridge.resumeWakeWord();
+        await bridge.resumeWakeWord();
       } catch (_) {}
     }
 
+    if (sessionId != _activeSessionId) return;
+
     // Auto-recover after 4 seconds so the assistant UI is never permanently blocked
     _errorRecoveryTimer = Timer(const Duration(seconds: 4), () {
-      if (state.state == AssistantState.error) {
+      if (sessionId == _activeSessionId &&
+          state.state == AssistantState.error) {
         state = state.copyWith(state: AssistantState.idle, errorMessage: null);
       }
     });
@@ -185,6 +190,13 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
 
     if (immediateQuery != null && immediateQuery.trim().isNotEmpty) {
       // User said "Hi Kee <query>" in one breath
+      if (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android &&
+          state.isHandsFreeEnabled) {
+        try {
+          await ref.read(nativeVoiceBridgeProvider).pauseWakeWord();
+        } catch (_) {}
+      }
       await processSpokenInput(immediateQuery);
     } else {
       // Normal wake: prompt or immediately listen
@@ -197,10 +209,12 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     _silenceTimer?.cancel();
     _continuousTurnTimer?.cancel();
     _hasDispatchedFinalForTurn = false;
+    final sessionId = ++_activeSessionId;
 
     // If currently speaking, stop TTS first
     if (state.isSpeaking) {
       await _tts.stop();
+      if (sessionId != _activeSessionId) return;
     }
 
     state = state.copyWith(
@@ -212,7 +226,8 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
 
     _wakeWord.setAssistantActive(true);
 
-    // Pause native Vosk wake-word listener before Flutter grabs the mic
+    // Pause native Vosk wake-word listener and wait for mic release before
+    // Flutter speech recognition opens the microphone.
     if (!kIsWeb &&
         defaultTargetPlatform == TargetPlatform.android &&
         state.isHandsFreeEnabled) {
@@ -222,6 +237,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
       } catch (e) {
         debugPrint('[VoiceAssistantController] pauseWakeWord error: $e');
       }
+      if (sessionId != _activeSessionId) return;
     }
 
     try {
@@ -229,12 +245,13 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
         listenFor: const Duration(seconds: 25),
         pauseFor: const Duration(seconds: 3),
         onSoundLevel: (level) {
-          if (state.isListening) {
+          if (sessionId == _activeSessionId && state.isListening) {
             state = state.copyWith(soundLevel: level);
           }
         },
         onResult: (text, isFinal) {
-          // Ignore stale callbacks if session already moved to processing/idle
+          // Ignore stale callbacks from cancelled sessions or non-listening states
+          if (sessionId != _activeSessionId) return;
           if (!state.isListening && !state.isInterrupted) return;
 
           state = state.copyWith(liveTranscript: text);
@@ -249,6 +266,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
         },
       );
     } catch (e) {
+      if (sessionId != _activeSessionId) return;
       String msg = e.toString();
       if (msg.contains('InvalidStateError') ||
           msg.contains('already started')) {
@@ -259,7 +277,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
             ? 'Please allow microphone access in your browser.'
             : 'Microphone permission required.';
       }
-      _handleError(msg);
+      await _handleError(msg);
     }
   }
 
@@ -269,7 +287,9 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     debugPrint('[VoiceAssistantController] Interruption triggered!');
 
     _continuousTurnTimer?.cancel();
+    final sessionId = ++_activeSessionId;
     await _tts.stop();
+    if (sessionId != _activeSessionId) return;
 
     state = state.copyWith(
       state: AssistantState.interrupted,
@@ -277,8 +297,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
       soundLevel: 0.0,
     );
 
-    // Transition smoothly back to listening
-    await Future.delayed(const Duration(milliseconds: 150));
+    // Transition smoothly back to listening (startListening keeps Vosk paused)
     await startListening();
   }
 
@@ -290,8 +309,10 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
       return;
     }
 
+    final sessionId = _activeSessionId;
     _silenceTimer?.cancel();
     await _speech.stopListening();
+    if (sessionId != _activeSessionId) return;
 
     state = state.copyWith(
       state: AssistantState.processing,
@@ -302,6 +323,7 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     try {
       final engine = ref.read(conversationEngineProvider);
       final action = await engine.processMessage(query);
+      if (sessionId != _activeSessionId) return;
 
       final reply = action.responseText;
 
@@ -326,6 +348,8 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
         );
       }
 
+      if (sessionId != _activeSessionId) return;
+
       state = state.copyWith(
         state: AssistantState.speaking,
         lastAssistantResponse: reply,
@@ -333,7 +357,8 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
 
       await _tts.speak(reply);
     } catch (e) {
-      _handleError('Could not process request: $e');
+      if (sessionId != _activeSessionId) return;
+      await _handleError('Could not process request: $e');
     }
   }
 
@@ -349,11 +374,15 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
 
     // Intentional continuous conversation mode: open one follow-up listening turn
     // with a hard 7-second turn timeout that is NOT defeated by partial ambient noise.
+    final turnBeforeStart = _activeSessionId;
     startListening();
+    final expectedTurnSessionId = turnBeforeStart + 1;
 
     _continuousTurnTimer?.cancel();
     _continuousTurnTimer = Timer(const Duration(seconds: 7), () {
-      if (state.isListening && !_hasDispatchedFinalForTurn) {
+      if (_activeSessionId == expectedTurnSessionId &&
+          state.isListening &&
+          !_hasDispatchedFinalForTurn) {
         dismissSession();
       }
     });
@@ -369,9 +398,12 @@ class VoiceAssistantController extends Notifier<VoiceAssistantState> {
     _silenceTimer?.cancel();
     _continuousTurnTimer?.cancel();
     _errorRecoveryTimer?.cancel();
+    final sessionId = ++_activeSessionId;
 
     await _speech.stopListening();
     await _tts.stop();
+
+    if (sessionId != _activeSessionId) return;
 
     state = state.copyWith(
       state: AssistantState.idle,

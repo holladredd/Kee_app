@@ -5,6 +5,9 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 abstract class ISpeechRecognitionService {
+  VoidCallback? onListeningStopped;
+  Function(String error)? onError;
+
   Future<bool> initialize();
   Future<bool> requestMicrophonePermission();
   Future<void> startListening({
@@ -30,10 +33,13 @@ class SpeechToTextService implements ISpeechRecognitionService {
   bool _isListening = false;
   bool _hasPermission = false;
 
-  final StreamController<double> _soundLevelController = StreamController<double>.broadcast();
+  final StreamController<double> _soundLevelController =
+      StreamController<double>.broadcast();
 
   VoidCallback? onListeningStarted;
+  @override
   VoidCallback? onListeningStopped;
+  @override
   Function(String error)? onError;
 
   @override
@@ -119,15 +125,18 @@ class SpeechToTextService implements ISpeechRecognitionService {
         },
         onError: (SpeechRecognitionError error) {
           _isListening = false;
-          onListeningStopped?.call();
           final msg = error.errorMsg.toLowerCase();
-          // Filter out benign browser events (e.g. silence or intentional aborts)
           if (msg.contains('no-speech') || msg.contains('aborted')) {
-            debugPrint('[SpeechToTextService] Non-fatal speech event: ${error.errorMsg}');
-            return;
+            debugPrint(
+              '[SpeechToTextService] Non-fatal speech event: ${error.errorMsg}',
+            );
+          } else {
+            debugPrint(
+              '[SpeechToTextService] Error: ${error.errorMsg} (permanent: ${error.permanent})',
+            );
           }
           onError?.call(error.errorMsg);
-          debugPrint('[SpeechToTextService] Error: ${error.errorMsg} (permanent: ${error.permanent})');
+          onListeningStopped?.call();
         },
         debugLogging: kDebugMode,
       );
@@ -151,7 +160,9 @@ class SpeechToTextService implements ISpeechRecognitionService {
     if (!_isInitialized) {
       final ok = await initialize();
       if (!ok) {
-        throw Exception('Speech recognition could not be initialized. Please verify microphone permission.');
+        throw Exception(
+          'Speech recognition could not be initialized. Please verify microphone permission.',
+        );
       }
     }
 
@@ -189,7 +200,8 @@ class SpeechToTextService implements ISpeechRecognitionService {
       _isListening = false;
       debugPrint('[SpeechToTextService] Listen error: $e');
       final errStr = e.toString();
-      if (errStr.contains('InvalidStateError') || errStr.contains('already started')) {
+      if (errStr.contains('InvalidStateError') ||
+          errStr.contains('already started')) {
         try {
           await _speech.cancel();
           await Future.delayed(const Duration(milliseconds: 200));

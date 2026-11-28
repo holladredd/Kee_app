@@ -1,9 +1,13 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:kee/core/constants/app_spacing.dart';
+import 'package:kee/core/voice/native_voice_bridge.dart';
+import 'package:kee/core/voice/voice_assistant_controller.dart';
 import 'quick_capture_sheet.dart';
 
-class VoiceCaptureDialog extends StatefulWidget {
+class VoiceCaptureDialog extends ConsumerStatefulWidget {
   const VoiceCaptureDialog({super.key});
 
   static Future<void> show(BuildContext context) {
@@ -15,11 +19,15 @@ class VoiceCaptureDialog extends StatefulWidget {
   }
 
   @override
-  State<VoiceCaptureDialog> createState() => _VoiceCaptureDialogState();
+  ConsumerState<VoiceCaptureDialog> createState() => _VoiceCaptureDialogState();
 }
 
-class _VoiceCaptureDialogState extends State<VoiceCaptureDialog> {
+class _VoiceCaptureDialogState extends ConsumerState<VoiceCaptureDialog> {
   final stt.SpeechToText _speech = stt.SpeechToText();
+  late final NativeVoiceBridge _bridge;
+  bool _isHandsFree = false;
+  bool _pausedWakeWord = false;
+  bool _isDisposed = false;
   bool _isListening = false;
   String _wordsSpoken = '';
   String _statusText = 'Initializing voice engine...';
@@ -28,11 +36,40 @@ class _VoiceCaptureDialogState extends State<VoiceCaptureDialog> {
   @override
   void initState() {
     super.initState();
+    _bridge = ref.read(nativeVoiceBridgeProvider);
+    _isHandsFree = ref.read(voiceAssistantProvider).isHandsFreeEnabled;
     _initSpeech();
+  }
+
+  Future<void> _pauseWakeWordIfNeeded() async {
+    if (_pausedWakeWord) return;
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        _isHandsFree) {
+      _pausedWakeWord = true;
+      try {
+        await _bridge.pauseWakeWord();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _resumeWakeWordIfNeeded() async {
+    if (!_pausedWakeWord) return;
+    _pausedWakeWord = false;
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        _isHandsFree) {
+      try {
+        await _bridge.resumeWakeWord();
+      } catch (_) {}
+    }
   }
 
   Future<void> _initSpeech() async {
     try {
+      await _pauseWakeWordIfNeeded();
+      if (_isDisposed) return;
+
       final available = await _speech.initialize(
         onStatus: (status) {
           if (mounted) {
@@ -40,11 +77,14 @@ class _VoiceCaptureDialogState extends State<VoiceCaptureDialog> {
               if (status == 'listening') {
                 _statusText = 'Listening... Speak naturally';
                 _isListening = true;
-              } else if (status == 'notListening') {
+              } else if (status == 'notListening' || status == 'done') {
                 _statusText = 'Tap mic to resume speaking';
                 _isListening = false;
               }
             });
+          }
+          if (status == 'notListening' || status == 'done') {
+            _resumeWakeWordIfNeeded();
           }
         },
         onError: (errorNotification) {
@@ -54,9 +94,11 @@ class _VoiceCaptureDialogState extends State<VoiceCaptureDialog> {
               _isListening = false;
             });
           }
+          _resumeWakeWordIfNeeded();
         },
       );
 
+      if (_isDisposed) return;
       setState(() {
         _hasSpeechAvailable = available;
         if (available) {
@@ -64,18 +106,24 @@ class _VoiceCaptureDialogState extends State<VoiceCaptureDialog> {
           _startListening();
         } else {
           _statusText = 'Speech recognition not available on this device';
+          _resumeWakeWordIfNeeded();
         }
       });
     } catch (e) {
-      setState(() {
-        _statusText = 'Voice recognition error: $e';
-        _hasSpeechAvailable = false;
-      });
+      await _resumeWakeWordIfNeeded();
+      if (mounted) {
+        setState(() {
+          _statusText = 'Voice recognition error: $e';
+          _hasSpeechAvailable = false;
+        });
+      }
     }
   }
 
   void _startListening() async {
-    if (!_hasSpeechAvailable) return;
+    if (!_hasSpeechAvailable || _isDisposed) return;
+    await _pauseWakeWordIfNeeded();
+    if (_isDisposed) return;
     await _speech.listen(
       onResult: (result) {
         if (mounted) {
@@ -85,12 +133,17 @@ class _VoiceCaptureDialogState extends State<VoiceCaptureDialog> {
         }
       },
     );
-    setState(() => _isListening = true);
+    if (mounted) {
+      setState(() => _isListening = true);
+    }
   }
 
   void _stopListening() async {
     await _speech.stop();
-    setState(() => _isListening = false);
+    if (mounted) {
+      setState(() => _isListening = false);
+    }
+    await _resumeWakeWordIfNeeded();
   }
 
   void _confirmAndProceed() {
@@ -101,7 +154,9 @@ class _VoiceCaptureDialogState extends State<VoiceCaptureDialog> {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _speech.stop();
+    _resumeWakeWordIfNeeded();
     super.dispose();
   }
 
@@ -150,7 +205,9 @@ class _VoiceCaptureDialogState extends State<VoiceCaptureDialog> {
             child: SingleChildScrollView(
               child: Text(
                 _wordsSpoken.isEmpty
-                    ? (_isListening ? 'Speak your thoughts or reminders...' : 'No words captured yet.')
+                    ? (_isListening
+                          ? 'Speak your thoughts or reminders...'
+                          : 'No words captured yet.')
                     : _wordsSpoken,
                 style: TextStyle(
                   fontSize: 16,
@@ -174,7 +231,9 @@ class _VoiceCaptureDialogState extends State<VoiceCaptureDialog> {
                   ? theme.colorScheme.error
                   : theme.colorScheme.primary,
               foregroundColor: Colors.white,
-              child: Icon(_isListening ? Icons.mic_off_rounded : Icons.mic_rounded),
+              child: Icon(
+                _isListening ? Icons.mic_off_rounded : Icons.mic_rounded,
+              ),
             ),
           ),
         ],

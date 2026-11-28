@@ -6,6 +6,7 @@ import '../../../core/constants/app_spacing.dart';
 import '../../../core/intelligence/unified_chat_provider.dart';
 import '../../../core/providers/auth_provider.dart';
 import '../../../core/voice/assistant_state.dart';
+import '../../../core/voice/native_voice_bridge.dart';
 import '../../../core/voice/voice_assistant_controller.dart';
 import '../../../core/widgets/kee_logo.dart';
 import '../../../core/widgets/kee_onboarding_sheet.dart';
@@ -26,8 +27,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      KeeOnboardingSheet.checkAndShow(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await KeeOnboardingSheet.checkAndShow(context);
+      if (mounted) {
+        await ref
+            .read(nativeVoiceBridgeProvider)
+            .runFirstLaunchHandsFreeSetup(context);
+      }
     });
   }
 
@@ -68,14 +74,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? const Color(0xFF14120E) : const Color(0xFFFBF8F4),
+      backgroundColor: isDark
+          ? const Color(0xFF14120E)
+          : const Color(0xFFFBF8F4),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg, vertical: AppSpacing.md),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.lg,
+              vertical: AppSpacing.md,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -98,7 +109,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   decoration: BoxDecoration(
                     color: isDark ? const Color(0xFF1E1A14) : Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: accentColor.withValues(alpha: 0.2)),
+                    border: Border.all(
+                      color: accentColor.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -177,7 +190,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 _buildMenuItem(
                   icon: Icons.settings_outlined,
                   title: 'Settings & Voice',
-                  subtitle: 'Hands-free "Hi Kee" / "What\'s up K", theme & sound',
+                  subtitle:
+                      'Hands-free "Hi Kee" / "What\'s up K", theme & sound',
                   color: accentColor,
                   onTap: () {
                     Navigator.pop(ctx);
@@ -232,10 +246,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           color: color == Theme.of(context).colorScheme.error ? color : null,
         ),
       ),
-      subtitle: Text(
-        subtitle,
-        style: const TextStyle(fontSize: 12),
-      ),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
       trailing: const Icon(Icons.chevron_right_rounded, size: 20),
       onTap: onTap,
     );
@@ -286,7 +297,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     Row(
                       children: [
                         GestureDetector(
-                          onTap: () => KeeOnboardingSheet.show(context, isReview: true),
+                          onTap: () =>
+                              KeeOnboardingSheet.show(context, isReview: true),
                           child: const KeeLogo(size: 40),
                         ),
                         const SizedBox(width: AppSpacing.sm),
@@ -321,7 +333,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontStyle: FontStyle.italic,
-                                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                                color: theme.colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.7),
                               ),
                             ),
                           ],
@@ -333,7 +346,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     IconButton(
                       icon: const Icon(Icons.menu_rounded, size: 28),
                       tooltip: 'Menu',
-                      onPressed: () => _showAppMenu(context, theme, isDark, accentColor),
+                      onPressed: () =>
+                          _showAppMenu(context, theme, isDark, accentColor),
                     ),
                   ],
                 ),
@@ -360,12 +374,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 // ─── 3. Chat Section at Top of Home (Takes user to Chat page) ───
                 Container(
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF14120E) : const Color(0xFFFBF8F4),
+                    color: isDark
+                        ? const Color(0xFF14120E)
+                        : const Color(0xFFFBF8F4),
                     borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
                     border: Border.all(
                       color: (voiceState?.isListening ?? false)
                           ? accentColor
-                          : (isDark ? const Color(0xFF2E271F) : const Color(0xFFE2D6C5)),
+                          : (isDark
+                                ? const Color(0xFF2E271F)
+                                : const Color(0xFFE2D6C5)),
                       width: (voiceState?.isListening ?? false) ? 1.5 : 1.0,
                     ),
                     boxShadow: [
@@ -385,15 +403,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         onTap: () {
                           if (isVoiceAvailable) {
                             try {
-                              final voiceCtrl = ref.read(voiceAssistantProvider.notifier);
-                              if (!(voiceState?.isListening ?? false) && !(voiceState?.isSpeaking ?? false)) {
+                              final voiceCtrl = ref.read(
+                                voiceAssistantProvider.notifier,
+                              );
+                              if (!(voiceState?.isListening ?? false) &&
+                                  !(voiceState?.isSpeaking ?? false)) {
                                 voiceCtrl.startListening();
                               }
                             } catch (_) {}
                           }
                           context.go('/ask-kee');
                         },
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppSpacing.radiusLg)),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(AppSpacing.radiusLg),
+                        ),
                         child: Padding(
                           padding: const EdgeInsets.all(AppSpacing.md),
                           child: Row(
@@ -423,13 +446,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                         ),
                                         const SizedBox(width: 6),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
                                           decoration: BoxDecoration(
-                                            color: accentColor.withValues(alpha: 0.15),
-                                            borderRadius: BorderRadius.circular(8),
+                                            color: accentColor.withValues(
+                                              alpha: 0.15,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
                                           ),
                                           child: Text(
-                                            (voiceState?.isHandsFreeEnabled ?? false) ? '"Hi Kee" / "What\'s up K"' : 'AI Chat',
+                                            (voiceState?.isHandsFreeEnabled ??
+                                                    false)
+                                                ? '"Hi Kee" / "What\'s up K"'
+                                                : 'AI Chat',
                                             style: TextStyle(
                                               fontSize: 10,
                                               fontWeight: FontWeight.w600,
@@ -446,18 +479,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                           : 'Tap to open the unified personal conversation',
                                       style: TextStyle(
                                         fontSize: 12,
-                                        color: theme.colorScheme.onSurfaceVariant,
+                                        color:
+                                            theme.colorScheme.onSurfaceVariant,
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                              Icon(Icons.arrow_forward_ios_rounded, size: 14, color: accentColor),
+                              Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 14,
+                                color: accentColor,
+                              ),
                             ],
                           ),
                         ),
                       ),
-                      Divider(height: 1, color: theme.colorScheme.outline.withValues(alpha: 0.3)),
+                      Divider(
+                        height: 1,
+                        color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                      ),
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.md,
@@ -471,20 +512,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 decoration: InputDecoration(
                                   hintText: 'Ask or remember anything...',
                                   hintStyle: TextStyle(
-                                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                                    color: theme.colorScheme.onSurfaceVariant
+                                        .withValues(alpha: 0.7),
                                     fontSize: 13,
                                   ),
                                   border: InputBorder.none,
                                   isDense: true,
                                 ),
-                                onSubmitted: (val) => _handleSubmitQuickChat(val),
+                                onSubmitted: (val) =>
+                                    _handleSubmitQuickChat(val),
                               ),
                             ),
                             IconButton(
                               icon: const Icon(Icons.send_rounded, size: 18),
                               tooltip: 'Open Chat',
                               color: accentColor,
-                              onPressed: () => _handleSubmitQuickChat(_quickInputController.text),
+                              onPressed: () => _handleSubmitQuickChat(
+                                _quickInputController.text,
+                              ),
                             ),
                           ],
                         ),
@@ -509,8 +554,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   context: context,
                   icon: Icons.lightbulb_outline_rounded,
                   title: 'Capture an idea',
-                  subtitle: '"I have an idea for an app that connects farmers to buyers"',
-                  onTap: () => _handleSubmitQuickChat('I have an idea for an app that connects farmers to buyers'),
+                  subtitle:
+                      '"I have an idea for an app that connects farmers to buyers"',
+                  onTap: () => _handleSubmitQuickChat(
+                    'I have an idea for an app that connects farmers to buyers',
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 _buildPromptTile(
@@ -518,15 +566,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   icon: Icons.alarm_rounded,
                   title: 'Schedule a smart reminder',
                   subtitle: '"Remind me to call David tomorrow at 3 PM"',
-                  onTap: () => _handleSubmitQuickChat('Remind me to call David tomorrow at 3 PM'),
+                  onTap: () => _handleSubmitQuickChat(
+                    'Remind me to call David tomorrow at 3 PM',
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 _buildPromptTile(
                   context: context,
                   icon: Icons.psychology_outlined,
                   title: 'Remember a preference',
-                  subtitle: '"Remember that I prefer morning meetings over afternoon ones"',
-                  onTap: () => _handleSubmitQuickChat('Remember that I prefer morning meetings over afternoon ones'),
+                  subtitle:
+                      '"Remember that I prefer morning meetings over afternoon ones"',
+                  onTap: () => _handleSubmitQuickChat(
+                    'Remember that I prefer morning meetings over afternoon ones',
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.xxl),
 
@@ -535,14 +588,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   data: (memories) {
                     return remindersAsync.when(
                       data: (reminders) {
-                        final upcoming = reminders.where((r) => r.isEnabled && r.scheduledAt.isAfter(DateTime.now())).toList()
-                          ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+                        final upcoming =
+                            reminders
+                                .where(
+                                  (r) =>
+                                      r.isEnabled &&
+                                      r.scheduledAt.isAfter(DateTime.now()),
+                                )
+                                .toList()
+                              ..sort(
+                                (a, b) =>
+                                    a.scheduledAt.compareTo(b.scheduledAt),
+                              );
 
                         return _buildStatusCard(
                           context,
                           memoriesCount: memories.length,
                           remindersCount: reminders.length,
-                          nextReminder: upcoming.isNotEmpty ? upcoming.first : null,
+                          nextReminder: upcoming.isNotEmpty
+                              ? upcoming.first
+                              : null,
                         );
                       },
                       loading: () => const SizedBox.shrink(),
@@ -580,7 +645,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 10),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: 10,
+        ),
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
@@ -746,7 +814,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 4),
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: 4,
+        ),
         child: Column(
           children: [
             Row(

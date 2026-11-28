@@ -89,10 +89,6 @@ class NativeVoiceBridge {
   Future<bool> startBackgroundListening() async {
     if (kIsWeb || !Platform.isAndroid) return false;
     try {
-      final hasOverlay = await isOverlayPermissionGranted();
-      if (!hasOverlay) {
-        await requestOverlayPermission();
-      }
       final res = await _channel.invokeMethod<bool>('startBackgroundListening');
       return res ?? false;
     } catch (e) {
@@ -232,10 +228,72 @@ class NativeVoiceBridge {
     }
   }
 
-  /// Ensures the offline Vosk wake-word model is downloaded and overlay
-  /// permission is explained/granted before enabling Hands-Free mode on Android.
+  Future<bool> isMicrophonePermissionGranted() async {
+    if (kIsWeb || !Platform.isAndroid) return true;
+    try {
+      final res = await _channel.invokeMethod<bool>(
+        'isMicrophonePermissionGranted',
+      );
+      return res ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> requestVoicePermissions() async {
+    if (kIsWeb || !Platform.isAndroid) return true;
+    try {
+      final res = await _channel.invokeMethod<bool>('requestVoicePermissions');
+      return res ?? false;
+    } catch (e) {
+      debugPrint('[NativeVoiceBridge] requestVoicePermissions error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> hasPromptedHandsFree() async {
+    if (kIsWeb || !Platform.isAndroid) return true;
+    try {
+      final res = await _channel.invokeMethod<bool>('hasPromptedHandsFree');
+      return res ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<void> setHandsFreePrompted(bool prompted) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    try {
+      await _channel.invokeMethod('setHandsFreePrompted', {
+        'prompted': prompted,
+      });
+    } catch (e) {
+      debugPrint('[NativeVoiceBridge] setHandsFreePrompted error: $e');
+    }
+  }
+
+  /// Ensures microphone/notification permissions, the offline Vosk wake-word
+  /// model, and overlay permission are explained/granted before enabling
+  /// Hands-Free mode on Android.
   Future<bool> ensureHandsFreeReady(BuildContext context) async {
     if (kIsWeb || !Platform.isAndroid) return true;
+
+    final hasMic = await isMicrophonePermissionGranted();
+    if (!hasMic) {
+      final granted = await requestVoicePermissions();
+      if (!granted) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Microphone permission is required for hands-free wake word ("Hi Kee").',
+              ),
+            ),
+          );
+        }
+        return false;
+      }
+    }
 
     final modelReady = await isWakeWordModelReady();
     if (!modelReady && context.mounted) {
@@ -302,7 +360,7 @@ class NativeVoiceBridge {
         builder: (ctx) => AlertDialog(
           title: const Text('Enable Floating Assistant'),
           content: const Text(
-            'To summon Kee with "Hi Kee" or "What\'s up K" while using other apps, Kee needs permission to display a compact floating assistant widget over other apps.',
+            'To summon Kee with "Hi Kee" while using other apps, Kee needs permission to display a compact floating assistant widget over other apps.',
           ),
           actions: [
             TextButton(
@@ -317,8 +375,42 @@ class NativeVoiceBridge {
         ),
       );
       if (shouldRequest != true) return false;
+      await requestOverlayPermission();
     }
 
     return true;
+  }
+
+  /// Runs once on first launch when hands-free defaults to enabled, requesting
+  /// permissions and downloading the Vosk model without nagging on later launches.
+  Future<void> runFirstLaunchHandsFreeSetup(BuildContext context) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+
+    final enabled = await getPersistedHandsFree();
+    if (!enabled) return;
+
+    final prompted = await hasPromptedHandsFree();
+    if (prompted) return;
+
+    final hasMic = await isMicrophonePermissionGranted();
+    final modelReady = await isWakeWordModelReady();
+    final hasOverlay = await isOverlayPermissionGranted();
+
+    if (hasMic && modelReady && hasOverlay) {
+      await setHandsFreePrompted(true);
+      final running = await isServiceRunning();
+      if (!running) {
+        await startBackgroundListening();
+      }
+      return;
+    }
+
+    await setHandsFreePrompted(true);
+    if (!context.mounted) return;
+
+    final ready = await ensureHandsFreeReady(context);
+    if (ready) {
+      await startBackgroundListening();
+    }
   }
 }
