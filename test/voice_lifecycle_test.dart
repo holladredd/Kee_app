@@ -298,43 +298,162 @@ ProviderContainer _createContainer({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
-  });
-
-  tearDown(() {
-    debugDefaultTargetPlatformOverride = null;
-  });
-
   group('Hands-Free Voice Lifecycle & Microphone Coordination Tests', () {
-    test(
-      'duplicate startup prevention: controller init does not call startBackgroundListening',
-      () async {
-        final bridge = _FakeNativeVoiceBridge()..persistedHandsFree = true;
-        final speech = _FakeSpeechService(bridge.events);
-        final tts = _FakeTtsService(bridge.events);
-        final container = _createContainer(
-          bridge: bridge,
-          speech: speech,
-          tts: tts,
-        );
-        addTearDown(container.dispose);
+    group('VoiceAssistantController', () {
+      setUp(() {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      });
 
-        container.read(voiceAssistantProvider);
-        await Future<void>.delayed(Duration.zero);
+      tearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+      });
+      test(
+        'duplicate startup prevention: controller init does not call startBackgroundListening',
+        () async {
+          final bridge = _FakeNativeVoiceBridge()..persistedHandsFree = true;
+          final speech = _FakeSpeechService(bridge.events);
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
 
-        expect(bridge.startBackgroundCalls, equals(0));
-        expect(
-          container.read(voiceAssistantProvider).isHandsFreeEnabled,
-          isTrue,
-        );
-      },
-    );
+          container.read(voiceAssistantProvider);
+          await Future<void>.delayed(Duration.zero);
 
-    test(
-      'explicit opt-out is preserved and prevents wake-word handover calls',
-      () async {
-        final bridge = _FakeNativeVoiceBridge()..persistedHandsFree = false;
+          expect(bridge.startBackgroundCalls, equals(0));
+          expect(
+            container.read(voiceAssistantProvider).isHandsFreeEnabled,
+            isTrue,
+          );
+        },
+      );
+
+      test(
+        'explicit opt-out is preserved and prevents wake-word handover calls',
+        () async {
+          final bridge = _FakeNativeVoiceBridge()..persistedHandsFree = false;
+          final speech = _FakeSpeechService(bridge.events);
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
+
+          final ctrl = container.read(voiceAssistantProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+
+          expect(
+            container.read(voiceAssistantProvider).isHandsFreeEnabled,
+            isFalse,
+          );
+
+          await ctrl.startListening();
+          speech.emitStopped();
+          await Future<void>.delayed(Duration.zero);
+
+          expect(bridge.pauseWakeWordCalls, equals(0));
+          expect(bridge.resumeWakeWordCalls, equals(0));
+        },
+      );
+
+      test(
+        'microphone handover order waits for pauseWakeWord before listening and resumes only after TTS completion',
+        () async {
+          final bridge = _FakeNativeVoiceBridge();
+          final speech = _FakeSpeechService(bridge.events);
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
+
+          final ctrl = container.read(voiceAssistantProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+
+          bridge.pauseCompleter = Completer<void>();
+          final listenFuture = ctrl.startListening();
+          await Future<void>.delayed(Duration.zero);
+
+          // Must pause Vosk first and NOT open Flutter mic until pause completes
+          expect(bridge.events, equals(['bridge.pauseWakeWord']));
+
+          bridge.pauseCompleter!.complete();
+          await listenFuture;
+
+          expect(
+            bridge.events,
+            equals(['bridge.pauseWakeWord', 'speech.startListening']),
+          );
+
+          speech.emitResult('hello kee', isFinal: true);
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+
+          // During processing and TTS speaking, Vosk must NOT be resumed yet
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.speaking),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(0));
+
+          tts.completeSpeaking();
+          await Future<void>.delayed(Duration.zero);
+
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.idle),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(1));
+          expect(bridge.events.last, equals('bridge.resumeWakeWord'));
+        },
+      );
+
+      test(
+        'no-speech and aborted callbacks dismiss session and resume Vosk',
+        () async {
+          final bridge = _FakeNativeVoiceBridge();
+          final speech = _FakeSpeechService(bridge.events);
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
+
+          final ctrl = container.read(voiceAssistantProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+
+          await ctrl.startListening();
+          speech.emitError('no-speech');
+          await Future<void>.delayed(Duration.zero);
+
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.idle),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(1));
+
+          await ctrl.startListening();
+          speech.emitError('aborted');
+          await Future<void>.delayed(Duration.zero);
+
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.idle),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(2));
+        },
+      );
+
+      test('recognition ending without a final result resumes Vosk', () async {
+        final bridge = _FakeNativeVoiceBridge();
         final speech = _FakeSpeechService(bridge.events);
         final tts = _FakeTtsService(bridge.events);
         final container = _createContainer(
@@ -347,258 +466,141 @@ void main() {
         final ctrl = container.read(voiceAssistantProvider.notifier);
         await Future<void>.delayed(Duration.zero);
 
-        expect(
-          container.read(voiceAssistantProvider).isHandsFreeEnabled,
-          isFalse,
-        );
-
         await ctrl.startListening();
+        speech.emitResult('partial words', isFinal: false);
         speech.emitStopped();
         await Future<void>.delayed(Duration.zero);
 
-        expect(bridge.pauseWakeWordCalls, equals(0));
-        expect(bridge.resumeWakeWordCalls, equals(0));
-      },
-    );
-
-    test(
-      'microphone handover order waits for pauseWakeWord before listening and resumes only after TTS completion',
-      () async {
-        final bridge = _FakeNativeVoiceBridge();
-        final speech = _FakeSpeechService(bridge.events);
-        final tts = _FakeTtsService(bridge.events);
-        final container = _createContainer(
-          bridge: bridge,
-          speech: speech,
-          tts: tts,
-        );
-        addTearDown(container.dispose);
-
-        final ctrl = container.read(voiceAssistantProvider.notifier);
-        await Future<void>.delayed(Duration.zero);
-
-        bridge.pauseCompleter = Completer<void>();
-        final listenFuture = ctrl.startListening();
-        await Future<void>.delayed(Duration.zero);
-
-        // Must pause Vosk first and NOT open Flutter mic until pause completes
-        expect(bridge.events, equals(['bridge.pauseWakeWord']));
-
-        bridge.pauseCompleter!.complete();
-        await listenFuture;
-
-        expect(
-          bridge.events,
-          equals(['bridge.pauseWakeWord', 'speech.startListening']),
-        );
-
-        speech.emitResult('hello kee', isFinal: true);
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-
-        // During processing and TTS speaking, Vosk must NOT be resumed yet
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.speaking),
-        );
-        expect(bridge.resumeWakeWordCalls, equals(0));
-
-        tts.completeSpeaking();
-        await Future<void>.delayed(Duration.zero);
-
         expect(
           container.read(voiceAssistantProvider).state,
           equals(AssistantState.idle),
         );
         expect(bridge.resumeWakeWordCalls, equals(1));
-        expect(bridge.events.last, equals('bridge.resumeWakeWord'));
-      },
-    );
+      });
 
-    test(
-      'no-speech and aborted callbacks dismiss session and resume Vosk',
-      () async {
-        final bridge = _FakeNativeVoiceBridge();
-        final speech = _FakeSpeechService(bridge.events);
-        final tts = _FakeTtsService(bridge.events);
-        final container = _createContainer(
-          bridge: bridge,
-          speech: speech,
-          tts: tts,
-        );
-        addTearDown(container.dispose);
+      test(
+        'TTS interruption keeps Vosk paused during the new turn and resumes only when done',
+        () async {
+          final bridge = _FakeNativeVoiceBridge();
+          final speech = _FakeSpeechService(bridge.events);
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
 
-        final ctrl = container.read(voiceAssistantProvider.notifier);
-        await Future<void>.delayed(Duration.zero);
+          final ctrl = container.read(voiceAssistantProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
 
-        await ctrl.startListening();
-        speech.emitError('no-speech');
-        await Future<void>.delayed(Duration.zero);
+          await ctrl.startListening();
+          speech.emitResult('hi kee', isFinal: true);
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.speaking),
+          );
 
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.idle),
-        );
-        expect(bridge.resumeWakeWordCalls, equals(1));
+          await ctrl.interrupt();
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.listening),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(0));
+          expect(bridge.pauseWakeWordCalls, equals(2));
 
-        await ctrl.startListening();
-        speech.emitError('aborted');
-        await Future<void>.delayed(Duration.zero);
+          tts.completeSpeaking(); // stale completion should be ignored
+          await Future<void>.delayed(Duration.zero);
+          expect(bridge.resumeWakeWordCalls, equals(0));
 
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.idle),
-        );
-        expect(bridge.resumeWakeWordCalls, equals(2));
-      },
-    );
-
-    test('recognition ending without a final result resumes Vosk', () async {
-      final bridge = _FakeNativeVoiceBridge();
-      final speech = _FakeSpeechService(bridge.events);
-      final tts = _FakeTtsService(bridge.events);
-      final container = _createContainer(
-        bridge: bridge,
-        speech: speech,
-        tts: tts,
+          await ctrl.dismissSession();
+          expect(bridge.resumeWakeWordCalls, equals(1));
+        },
       );
-      addTearDown(container.dispose);
 
-      final ctrl = container.read(voiceAssistantProvider.notifier);
-      await Future<void>.delayed(Duration.zero);
+      test(
+        'error recovery stops mic/TTS, resumes Vosk, and returns to idle after 4s',
+        () async {
+          final bridge = _FakeNativeVoiceBridge();
+          final speech = _FakeSpeechService(bridge.events)..throwOnStart = true;
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
 
-      await ctrl.startListening();
-      speech.emitResult('partial words', isFinal: false);
-      speech.emitStopped();
-      await Future<void>.delayed(Duration.zero);
+          final ctrl = container.read(voiceAssistantProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
 
-      expect(
-        container.read(voiceAssistantProvider).state,
-        equals(AssistantState.idle),
+          await ctrl.startListening();
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.error),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(1));
+
+          await Future<void>.delayed(
+            const Duration(seconds: 4, milliseconds: 50),
+          );
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.idle),
+          );
+        },
       );
-      expect(bridge.resumeWakeWordCalls, equals(1));
+
+      test(
+        'continuous mode keeps Vosk paused for follow-up turn and resumes after 7s timeout',
+        () async {
+          final bridge = _FakeNativeVoiceBridge();
+          final speech = _FakeSpeechService(bridge.events);
+          final tts = _FakeTtsService(bridge.events);
+          final container = _createContainer(
+            bridge: bridge,
+            speech: speech,
+            tts: tts,
+          );
+          addTearDown(container.dispose);
+
+          final ctrl = container.read(voiceAssistantProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+          ctrl.setContinuousMode(true);
+
+          await ctrl.startListening();
+          speech.emitResult('hello', isFinal: true);
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.speaking),
+          );
+
+          tts.completeSpeaking();
+          await Future<void>.delayed(Duration.zero);
+
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.listening),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(0));
+
+          await Future<void>.delayed(
+            const Duration(seconds: 7, milliseconds: 100),
+          );
+          expect(
+            container.read(voiceAssistantProvider).state,
+            equals(AssistantState.idle),
+          );
+          expect(bridge.resumeWakeWordCalls, equals(1));
+        },
+      );
     });
-
-    test(
-      'TTS interruption keeps Vosk paused during the new turn and resumes only when done',
-      () async {
-        final bridge = _FakeNativeVoiceBridge();
-        final speech = _FakeSpeechService(bridge.events);
-        final tts = _FakeTtsService(bridge.events);
-        final container = _createContainer(
-          bridge: bridge,
-          speech: speech,
-          tts: tts,
-        );
-        addTearDown(container.dispose);
-
-        final ctrl = container.read(voiceAssistantProvider.notifier);
-        await Future<void>.delayed(Duration.zero);
-
-        await ctrl.startListening();
-        speech.emitResult('hi kee', isFinal: true);
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.speaking),
-        );
-
-        await ctrl.interrupt();
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.listening),
-        );
-        expect(bridge.resumeWakeWordCalls, equals(0));
-        expect(bridge.pauseWakeWordCalls, equals(2));
-
-        tts.completeSpeaking(); // stale completion should be ignored
-        await Future<void>.delayed(Duration.zero);
-        expect(bridge.resumeWakeWordCalls, equals(0));
-
-        await ctrl.dismissSession();
-        expect(bridge.resumeWakeWordCalls, equals(1));
-      },
-    );
-
-    test(
-      'error recovery stops mic/TTS, resumes Vosk, and returns to idle after 4s',
-      () async {
-        final bridge = _FakeNativeVoiceBridge();
-        final speech = _FakeSpeechService(bridge.events)..throwOnStart = true;
-        final tts = _FakeTtsService(bridge.events);
-        final container = _createContainer(
-          bridge: bridge,
-          speech: speech,
-          tts: tts,
-        );
-        addTearDown(container.dispose);
-
-        final ctrl = container.read(voiceAssistantProvider.notifier);
-        await Future<void>.delayed(Duration.zero);
-
-        await ctrl.startListening();
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.error),
-        );
-        expect(bridge.resumeWakeWordCalls, equals(1));
-
-        await Future<void>.delayed(
-          const Duration(seconds: 4, milliseconds: 50),
-        );
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.idle),
-        );
-      },
-    );
-
-    test(
-      'continuous mode keeps Vosk paused for follow-up turn and resumes after 7s timeout',
-      () async {
-        final bridge = _FakeNativeVoiceBridge();
-        final speech = _FakeSpeechService(bridge.events);
-        final tts = _FakeTtsService(bridge.events);
-        final container = _createContainer(
-          bridge: bridge,
-          speech: speech,
-          tts: tts,
-        );
-        addTearDown(container.dispose);
-
-        final ctrl = container.read(voiceAssistantProvider.notifier);
-        await Future<void>.delayed(Duration.zero);
-        ctrl.setContinuousMode(true);
-
-        await ctrl.startListening();
-        speech.emitResult('hello', isFinal: true);
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.speaking),
-        );
-
-        tts.completeSpeaking();
-        await Future<void>.delayed(Duration.zero);
-
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.listening),
-        );
-        expect(bridge.resumeWakeWordCalls, equals(0));
-
-        await Future<void>.delayed(
-          const Duration(seconds: 7, milliseconds: 100),
-        );
-        expect(
-          container.read(voiceAssistantProvider).state,
-          equals(AssistantState.idle),
-        );
-        expect(bridge.resumeWakeWordCalls, equals(1));
-      },
-    );
 
     testWidgets(
       'VoiceCaptureDialog pauses wake word on open and resumes on close',
+      variant: TargetPlatformVariant.only(TargetPlatform.android),
       (tester) async {
         final bridge = _FakeNativeVoiceBridge();
         final speech = _FakeSpeechService(bridge.events);
@@ -634,9 +636,9 @@ void main() {
         await tester.pump();
         expect(bridge.pauseWakeWordCalls, equals(1));
 
-        // Dispose dialog
+        // Dispose dialog and advance past speech_to_text's 2s internal stop timer
         await tester.pumpWidget(const SizedBox.shrink());
-        await tester.pump();
+        await tester.pump(const Duration(seconds: 3));
 
         expect(bridge.resumeWakeWordCalls, equals(1));
       },
